@@ -36,6 +36,7 @@
 #include <iostream>
 #include <vector>
 #include <array>
+#include <string>
 #include <unordered_map>
 
 #include <seqan/arg_parse.h>
@@ -61,8 +62,12 @@ unsigned int getCode (char c) {
     case 'U':
       return 3;
     default:
-      return 0;
+      return 4;
   }
+}
+
+inline void updateQuality (std::string & s, std::string & t) {
+    std::transform(s.begin(), s.end(), t.begin(), t.begin(), [] (char & c, char & d) { return std::max<char>(c, d); });
 }
 
 inline void updateQuality (seqan::CharString & s, seqan::CharString & t) {
@@ -70,16 +75,19 @@ inline void updateQuality (seqan::CharString & s, seqan::CharString & t) {
 }
 
 struct Parameters {
-    seqan::CharString readsFileName;
+    std::vector < std::string >  readsFileNames;
     seqan::CharString outputFileName;
-    Parameters (): readsFileName(), outputFileName() {}
+    unsigned int nReadsFiles;
+    Parameters (): readsFileNames(), outputFileName(), nReadsFiles(0) {}
 };
 
-seqan::ArgumentParser::ParseResult parseCommandLine(Parameters &parameters, int argc, char const ** argv) {
+Parameters parameters;
+
+seqan::ArgumentParser::ParseResult parseCommandLine(int argc, char const ** argv) {
   seqan::ArgumentParser parser("srnaMapper");
   setShortDescription(parser, "Mapper for short short reads!");
   setVersion(parser, "0.0");
-  seqan::addOption(parser, seqan::ArgParseOption("r", "reads", "The input reads file", seqan::ArgParseArgument::INPUT_FILE, "IN"));
+  seqan::addOption(parser, seqan::ArgParseOption("r", "reads", "The input reads file", seqan::ArgParseArgument::INPUT_FILE, "IN", true));
   seqan::addOption(parser, seqan::ArgParseOption("o", "output", "The output file", seqan::ArgParseArgument::OUTPUT_FILE, "IN"));
   setRequired(parser, "r");
   setRequired(parser, "o");
@@ -87,15 +95,17 @@ seqan::ArgumentParser::ParseResult parseCommandLine(Parameters &parameters, int 
   if (res != seqan::ArgumentParser::PARSE_OK) {
     return res;
   }
-  getOptionValue(parameters.readsFileName,  parser, "reads");
+  parameters.readsFileNames = getOptionValues(parser, "reads");
   getOptionValue(parameters.outputFileName, parser, "output");
+  parameters.nReadsFiles = getOptionValueCount(parser, "reads");
   return seqan::ArgumentParser::PARSE_OK;
 }
 
 class Tree {
 private:
-  std::vector < std::array< size_t, N_NUCLEOTIDES > > sequences;
-  std::vector < seqan::CharString > qualities;
+  std::vector < std::array < size_t, N_NUCLEOTIDES > > sequences;
+  std::vector < std::string > qualities;
+  std::vector < std::vector < unsigned int > > counts;
   std::unordered_map < size_t, size_t > sequence2quality;
   const static size_t NO_DATA = static_cast < size_t > (-1);
 
@@ -105,45 +115,54 @@ private:
 
 public:
 
-  Tree (): sequences(), qualities(), sequence2quality() {
+  Tree (): sequences(), qualities(), counts(), sequence2quality() {
     createCell();
   }
 
-  void add (seqan::Dna5String sequence, seqan::CharString quality) {
+  void add (std::string & sequence, std::string & quality, size_t idReadsFile) {
     size_t pos = 0;
     size_t size = sequences.size();
-    for (seqan::Dna5 c: sequence) {
-      if (sequences[pos][c] == NO_DATA) {
+    for (char c: sequence) {
+      int b = getCode(c);
+      if (sequences[pos][b] == NO_DATA) {
         createCell();
-        pos = sequences[pos][c] = size;
+        pos = sequences[pos][b] = size;
         ++size;
       }
       else {
-        pos = sequences[pos][c];
+        pos = sequences[pos][b];
       }
     }
     auto it = sequence2quality.find(pos);
     if (it == sequence2quality.end()) {
+      std::vector < unsigned int > count (parameters.nReadsFiles, 0);
+      count[idReadsFile] = 1;
       qualities.push_back(quality);
+      counts.push_back(count);
       sequence2quality[pos] = qualities.size() - 1;
     }
     else {
       updateQuality(qualities[(*it).second], quality);
+      counts[(*it).second][idReadsFile] += 1;
     }
   }
 
-  void print (unsigned int & count, seqan::CharString & currentString, size_t currentPos, std::ostream & os, size_t pos) const {
+  void print (unsigned int & count, std::string & currentString, size_t currentPos, std::ostream & os, size_t pos) const {
     auto it = sequence2quality.find(pos);
     if (it != sequence2quality.end()) {
       currentString[currentPos] = '\0';
-      os << "@read " << (++count) << "\n" << currentString << "\n+\n" << qualities[(*it).second] << "\n";
+      os << "@read_" << (++count) << " x";
+      for (unsigned int c: counts[(*it).second]) {
+        os << "_" << c;
+      }
+      os << "\n" << currentString.data() << "\n+\n" << qualities[(*it).second] << "\n";
     }
     for (size_t i = 0; i < N_NUCLEOTIDES; ++i) {
       size_t nextPos = sequences[pos][i];
       if (nextPos != NO_DATA) {
         char currentChar = seqan::Dna5(i);
-        if (length(currentString) == currentPos) {
-          appendValue(currentString, currentChar);
+        if (currentString.size() == currentPos) {
+          currentString += currentChar;
         }
         else {
           currentString[currentPos] = currentChar;
@@ -157,42 +176,34 @@ public:
 };
 
 std::ostream & operator<<(std::ostream & os, const Tree & t) {
-  seqan::CharString currentString;
+  std::string currentString;
   unsigned int count = 0;
   t.print(count, currentString, 0, os, 0);
   return os;
 }
 
-int readReadsFile (seqan::CharString & readsFileName, seqan::CharString & outputFileName) {
-  seqan::SeqFileIn readsFile;
-  if (! open(readsFile, toCString(readsFileName))) {
-    std::cerr << "ERROR: Could not open the file '" << readsFileName << "'.\n";
-    return 1;
-  }
-  seqan::StringSet<seqan::CharString> ids;
-  seqan::StringSet<seqan::Dna5String> seqs;
-  seqan::StringSet<seqan::CharString> quals;
+int readReadsFile () {
   Tree tree;
-  reserve(ids, NUMBER_OF_READ_PER_BATCH);
-  reserve(seqs, NUMBER_OF_READ_PER_BATCH);
-  reserve(quals, NUMBER_OF_READ_PER_BATCH);
-  try {
+  for (size_t idReadsFile = 0; idReadsFile < parameters.nReadsFiles; ++idReadsFile) {
+    std::string &readsFileName = parameters.readsFileNames[idReadsFile];
+    std::ifstream readsFile (seqan::toCString(readsFileName), std::ifstream::in);
+    if (! readsFile.is_open()) {
+      std::cerr << "ERROR: Could not open the file '" << readsFileName << "'.\n";
+      return 1;
+    }
+    std::string line, sequence, quality;
     std::cerr << "Reading '" << readsFileName << "'...\n";
-    while (! atEnd(readsFile)) {
-      readRecords(ids, seqs, quals, readsFile, NUMBER_OF_READ_PER_BATCH);
-      for (unsigned i = 0; i < length(ids); ++i) {
-        tree.add(seqs[i], quals[i]);
-      }
+    while (std::getline(readsFile, line)) {
+      std::getline(readsFile, sequence);
+      std::getline(readsFile, line);
+      std::getline(readsFile, quality);
+      tree.add(sequence, quality, idReadsFile);
     }
     std::cerr << "... done.\n";
   }
-  catch (seqan::Exception const & e) {
-    std::cerr << "ERROR: " << e.what() << std::endl;
-    return 1;
-  }
-  std::ofstream outputFile(toCString(outputFileName), std::ofstream::out);
+  std::ofstream outputFile(seqan::toCString(parameters.outputFileName), std::ofstream::out);
   if (! outputFile.is_open()) {
-    std::cerr << "ERROR: Could not open the file '" << outputFileName << "'.\n";
+    std::cerr << "ERROR: Could not open the file '" << parameters.outputFileName << "'.\n";
     return 1;
   }
   outputFile << tree;
@@ -200,13 +211,12 @@ int readReadsFile (seqan::CharString & readsFileName, seqan::CharString & output
 }
 
 int main(int argc, char const ** argv) {
-  Parameters parameters;
-  seqan::ArgumentParser::ParseResult res = parseCommandLine(parameters, argc, argv);
+  seqan::ArgumentParser::ParseResult res = parseCommandLine(argc, argv);
 
   if (res != seqan::ArgumentParser::PARSE_OK) {
     return res == seqan::ArgumentParser::PARSE_ERROR;
   }
-  int readRes = readReadsFile(parameters.readsFileName, parameters.outputFileName);
+  int readRes = readReadsFile();
   if (readRes != 0) {
     return res;
   }
