@@ -136,8 +136,9 @@ public:
     size_t pos = 0;
     size_t size = sequences.size();
     depth = std::max<size_t> (depth, sequence.size());
-    for (char c: sequence) {
-      int b = getCode(c);
+    for (size_t i = sequence.size(); i > 0; --i) {
+      char c = sequence[i-1];
+      int b  = getCode(c);
       if (sequences[pos][b] == NO_DATA) {
         createCell();
         pos = sequences[pos][b] = size;
@@ -161,32 +162,34 @@ public:
     }
   }
 
+  size_t getBranch (size_t treePos, size_t b) const {
+    return sequences[treePos][b];
+  }
+
   void print (unsigned int & readId, std::string & readString, size_t readPos, std::ostream & os, size_t treePos, std::vector < unsigned int > & tripletCount, unsigned int tripletId) const {
     auto         it              = sequence2quality.find(treePos);
     unsigned int futureTripletId = 0;
     size_t       nextPos         = 0;
-    char         currentChar     = 0;
+    bool         depth3          = (depth - readPos >= TRIPLET);
     tripletId %= TRIPLET_MASK;
     tripletId *= N_NUCLEOTIDES;
     if (it != sequence2quality.end()) {
-      readString[readPos] = '\0';
       os << "@read_" << (++readId) << " x";
       for (unsigned int c: counts[(*it).second]) {
         os << "_" << c;
       }
-      os << "\n" << readString.data() << "\n+\n" << qualities[(*it).second] << "\n";
+      os << "\n" << (readString.data()+readPos+1) << "\n+\n" << qualities[(*it).second] << "\n";
     }
     for (size_t i = 0; i < N_NUCLEOTIDES; ++i) {
-      nextPos = sequences[treePos][i];
+      nextPos = getBranch(treePos, i);
       if (nextPos != NO_DATA) {
-        currentChar = DNA5_TO_CHAR[i];
-        readString[readPos] = currentChar;
-        futureTripletId = tripletId + i;
-        if (readPos+1 >= TRIPLET) tripletCount[futureTripletId] += 1;
+        readString[readPos] = DNA5_TO_CHAR[i];
+        futureTripletId     = tripletId + i;
+        if (depth3) tripletCount[futureTripletId] += 1;
         if (tripletCount[futureTripletId] <= parameters.lowComplexityThreshold) {
-          print(readId, readString, readPos+1, os, nextPos, tripletCount, futureTripletId);
+          print(readId, readString, readPos-1, os, nextPos, tripletCount, futureTripletId);
         }
-        if (readPos+1 >= TRIPLET) tripletCount[futureTripletId] -= 1;
+        if (depth3) tripletCount[futureTripletId] -= 1;
       }
     }
   }
@@ -195,10 +198,10 @@ public:
 };
 
 std::ostream & operator<<(std::ostream & os, const Tree & t) {
-  std::string readString (t.getDepth(), 0);
+  std::string readString (t.getDepth()+1, 0);
   unsigned int readId = 0;
   std::vector < unsigned int > tripletCounts (N_TRIPLETS, 0);
-  t.print(readId, readString, 0, os, 0, tripletCounts, 0);
+  t.print(readId, readString, t.getDepth()-1, os, 0, tripletCounts, 0);
   return os;
 }
 
