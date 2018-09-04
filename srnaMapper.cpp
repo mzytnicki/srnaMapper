@@ -33,6 +33,7 @@
 // ==========================================================================
 // Parse parameters
 // ==========================================================================
+#include <cmath>
 #include <iostream>
 #include <vector>
 #include <array>
@@ -42,8 +43,11 @@
 #include <seqan/arg_parse.h>
 #include <seqan/seq_io.h>
 
-#define NUMBER_OF_READ_PER_BATCH 100000
-#define N_NUCLEOTIDES seqan::ValueSize<seqan::Dna5>::VALUE
+static const unsigned int N_NUCLEOTIDES           = 5;
+static const unsigned int TRIPLET                 = 3;
+static const unsigned int N_TRIPLETS              = std::pow(N_NUCLEOTIDES, TRIPLET);
+static const unsigned int TRIPLET_MASK            = std::pow(N_NUCLEOTIDES, TRIPLET-1);
+static const char         DNA5_TO_CHAR []         = { 'A', 'C', 'G', 'T', 'N' };
 
 unsigned int getCode (char c) {
   switch (c) {
@@ -78,7 +82,8 @@ struct Parameters {
     std::vector < std::string >  readsFileNames;
     seqan::CharString outputFileName;
     unsigned int nReadsFiles;
-    Parameters (): readsFileNames(), outputFileName(), nReadsFiles(0) {}
+    unsigned int lowComplexityThreshold;
+    Parameters (): readsFileNames(), outputFileName(), nReadsFiles(0), lowComplexityThreshold(0) {}
 };
 
 Parameters parameters;
@@ -89,8 +94,10 @@ seqan::ArgumentParser::ParseResult parseCommandLine(int argc, char const ** argv
   setVersion(parser, "0.0");
   seqan::addOption(parser, seqan::ArgParseOption("r", "reads", "The input reads file", seqan::ArgParseArgument::INPUT_FILE, "IN", true));
   seqan::addOption(parser, seqan::ArgParseOption("o", "output", "The output file", seqan::ArgParseArgument::OUTPUT_FILE, "IN"));
+  seqan::addOption(parser, seqan::ArgParseOption("f", "filter", "Low complexity filter", seqan::ArgParseArgument::INTEGER, "INT"));
   setRequired(parser, "r");
   setRequired(parser, "o");
+  setDefaultValue(parser, "filter", "8");
   seqan::ArgumentParser::ParseResult res = seqan::parse(parser, argc, argv);
   if (res != seqan::ArgumentParser::PARSE_OK) {
     return res;
@@ -98,11 +105,13 @@ seqan::ArgumentParser::ParseResult parseCommandLine(int argc, char const ** argv
   parameters.readsFileNames = getOptionValues(parser, "reads");
   getOptionValue(parameters.outputFileName, parser, "output");
   parameters.nReadsFiles = getOptionValueCount(parser, "reads");
+  getOptionValue(parameters.lowComplexityThreshold, parser, "filter");
   return seqan::ArgumentParser::PARSE_OK;
 }
 
 class Tree {
 private:
+  size_t depth;
   std::vector < std::array < size_t, N_NUCLEOTIDES > > sequences;
   std::vector < std::string > qualities;
   std::vector < std::vector < unsigned int > > counts;
@@ -115,13 +124,18 @@ private:
 
 public:
 
-  Tree (): sequences(), qualities(), counts(), sequence2quality() {
+  Tree (): depth(0), sequences(), qualities(), counts(), sequence2quality() {
     createCell();
+  }
+
+  size_t getDepth () const {
+    return depth;
   }
 
   void add (std::string & sequence, std::string & quality, size_t idReadsFile) {
     size_t pos = 0;
     size_t size = sequences.size();
+    depth = std::max<size_t> (depth, sequence.size());
     for (char c: sequence) {
       int b = getCode(c);
       if (sequences[pos][b] == NO_DATA) {
@@ -147,27 +161,32 @@ public:
     }
   }
 
-  void print (unsigned int & count, std::string & currentString, size_t currentPos, std::ostream & os, size_t pos) const {
-    auto it = sequence2quality.find(pos);
+  void print (unsigned int & readId, std::string & readString, size_t readPos, std::ostream & os, size_t treePos, std::vector < unsigned int > & tripletCount, unsigned int tripletId) const {
+    auto         it              = sequence2quality.find(treePos);
+    unsigned int futureTripletId = 0;
+    size_t       nextPos         = 0;
+    char         currentChar     = 0;
+    tripletId %= TRIPLET_MASK;
+    tripletId *= N_NUCLEOTIDES;
     if (it != sequence2quality.end()) {
-      currentString[currentPos] = '\0';
-      os << "@read_" << (++count) << " x";
+      readString[readPos] = '\0';
+      os << "@read_" << (++readId) << " x";
       for (unsigned int c: counts[(*it).second]) {
         os << "_" << c;
       }
-      os << "\n" << currentString.data() << "\n+\n" << qualities[(*it).second] << "\n";
+      os << "\n" << readString.data() << "\n+\n" << qualities[(*it).second] << "\n";
     }
     for (size_t i = 0; i < N_NUCLEOTIDES; ++i) {
-      size_t nextPos = sequences[pos][i];
+      nextPos = sequences[treePos][i];
       if (nextPos != NO_DATA) {
-        char currentChar = seqan::Dna5(i);
-        if (currentString.size() == currentPos) {
-          currentString += currentChar;
+        currentChar = DNA5_TO_CHAR[i];
+        readString[readPos] = currentChar;
+        futureTripletId = tripletId + i;
+        if (readPos+1 >= TRIPLET) tripletCount[futureTripletId] += 1;
+        if (tripletCount[futureTripletId] <= parameters.lowComplexityThreshold) {
+          print(readId, readString, readPos+1, os, nextPos, tripletCount, futureTripletId);
         }
-        else {
-          currentString[currentPos] = currentChar;
-        }
-        print(count, currentString, currentPos+1, os, nextPos);
+        if (readPos+1 >= TRIPLET) tripletCount[futureTripletId] -= 1;
       }
     }
   }
@@ -176,9 +195,10 @@ public:
 };
 
 std::ostream & operator<<(std::ostream & os, const Tree & t) {
-  std::string currentString;
-  unsigned int count = 0;
-  t.print(count, currentString, 0, os, 0);
+  std::string readString (t.getDepth(), 0);
+  unsigned int readId = 0;
+  std::vector < unsigned int > tripletCounts (N_TRIPLETS, 0);
+  t.print(readId, readString, 0, os, 0, tripletCounts, 0);
   return os;
 }
 
@@ -206,7 +226,9 @@ int readReadsFile () {
     std::cerr << "ERROR: Could not open the file '" << parameters.outputFileName << "'.\n";
     return 1;
   }
+  std::cerr << "Printing reads to '" << parameters.outputFileName << "'...\n";
   outputFile << tree;
+  std::cerr << "... done.\n";
   return 0;
 }
 
