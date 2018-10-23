@@ -136,26 +136,27 @@ public:
   void add (std::string & sequence, std::string & quality, size_t idReadsFile) {
     size_t       pos             = 0;
     size_t       size            = sequences.size();
-    depth = std::max<size_t> (depth, sequence.size());
     unsigned int tripletId       = 0;
+    bool         isTriplet       = false;
+    depth = std::max<size_t> (depth, sequence.size());
     std::fill(tripletCounts.begin(), tripletCounts.end(), 0);
-    for (size_t i = 0; i < sequence.size(); ++i) {
-      int b = getCode(sequence[i]);
-      if (i >= TRIPLET-1) {
+    for (size_t i = sequence.size(); i > 0; --i) {
+      char c = sequence[i-1];
+      int  b = getCode(c);
+      if ((! isTriplet) && (i <= sequence.size() - TRIPLET)) {
+        isTriplet = true;
+      }
+      if (isTriplet) {
         tripletId %= TRIPLET_MASK;
       }
       tripletId *= N_NUCLEOTIDES;
       tripletId += b;
-      if (i >= TRIPLET-1) {
+      if (isTriplet) {
         tripletCounts[tripletId] += 1;
         if (tripletCounts[tripletId] >= parameters.lowComplexityThreshold) {
           return;
         }
       }
-    }
-    for (size_t i = sequence.size(); i > 0; --i) {
-      char c = sequence[i-1];
-      int b  = getCode(c);
       if (sequences[pos][b] == NO_DATA) {
         createCell();
         pos = sequences[pos][b] = size;
@@ -179,13 +180,9 @@ public:
     }
   }
 
-  size_t getBranch (size_t treePos, size_t b) const {
-    return sequences[treePos][b];
-  }
-
   void print (unsigned int & readId, std::string & readString, size_t readPos, std::ostream & os, size_t treePos) const {
-    auto         it              = sequence2quality.find(treePos);
-    size_t       nextPos         = 0;
+    auto   it      = sequence2quality.find(treePos);
+    size_t nextPos = 0;
     if (it != sequence2quality.end()) {
       os << "@read_" << (++readId) << " x";
       for (unsigned int c: counts[(*it).second]) {
@@ -194,7 +191,7 @@ public:
       os << "\n" << (readString.data()+readPos+1) << "\n+\n" << qualities[(*it).second] << "\n";
     }
     for (size_t i = 0; i < N_NUCLEOTIDES; ++i) {
-      nextPos = getBranch(treePos, i);
+      nextPos = sequences[treePos][i];
       if (nextPos != NO_DATA) {
         readString[readPos] = DNA5_TO_CHAR[i];
         print(readId, readString, readPos-1, os, nextPos);
