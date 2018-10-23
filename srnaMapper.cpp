@@ -117,6 +117,7 @@ private:
   std::vector < std::vector < unsigned int > > counts;
   std::unordered_map < size_t, size_t > sequence2quality;
   const static size_t NO_DATA = static_cast < size_t > (-1);
+  std::vector < unsigned int > tripletCounts;
 
   void createCell () {
     sequences.emplace_back(std::array < size_t, N_NUCLEOTIDES > {NO_DATA, NO_DATA, NO_DATA, NO_DATA, NO_DATA});
@@ -124,7 +125,7 @@ private:
 
 public:
 
-  Tree (): depth(0), sequences(), qualities(), counts(), sequence2quality() {
+  Tree (): depth(0), sequences(), qualities(), counts(), sequence2quality(), tripletCounts(N_TRIPLETS, 0) {
     createCell();
   }
 
@@ -133,9 +134,25 @@ public:
   }
 
   void add (std::string & sequence, std::string & quality, size_t idReadsFile) {
-    size_t pos = 0;
-    size_t size = sequences.size();
+    size_t       pos             = 0;
+    size_t       size            = sequences.size();
     depth = std::max<size_t> (depth, sequence.size());
+    unsigned int tripletId       = 0;
+    std::fill(tripletCounts.begin(), tripletCounts.end(), 0);
+    for (size_t i = 0; i < sequence.size(); ++i) {
+      int b = getCode(sequence[i]);
+      if (i >= TRIPLET-1) {
+        tripletId %= TRIPLET_MASK;
+      }
+      tripletId *= N_NUCLEOTIDES;
+      tripletId += b;
+      if (i >= TRIPLET-1) {
+        tripletCounts[tripletId] += 1;
+        if (tripletCounts[tripletId] >= parameters.lowComplexityThreshold) {
+          return;
+        }
+      }
+    }
     for (size_t i = sequence.size(); i > 0; --i) {
       char c = sequence[i-1];
       int b  = getCode(c);
@@ -166,13 +183,9 @@ public:
     return sequences[treePos][b];
   }
 
-  void print (unsigned int & readId, std::string & readString, size_t readPos, std::ostream & os, size_t treePos, std::vector < unsigned int > & tripletCount, unsigned int tripletId) const {
+  void print (unsigned int & readId, std::string & readString, size_t readPos, std::ostream & os, size_t treePos) const {
     auto         it              = sequence2quality.find(treePos);
-    unsigned int futureTripletId = 0;
     size_t       nextPos         = 0;
-    bool         depth3          = (depth - readPos >= TRIPLET);
-    tripletId %= TRIPLET_MASK;
-    tripletId *= N_NUCLEOTIDES;
     if (it != sequence2quality.end()) {
       os << "@read_" << (++readId) << " x";
       for (unsigned int c: counts[(*it).second]) {
@@ -184,12 +197,7 @@ public:
       nextPos = getBranch(treePos, i);
       if (nextPos != NO_DATA) {
         readString[readPos] = DNA5_TO_CHAR[i];
-        futureTripletId     = tripletId + i;
-        if (depth3) tripletCount[futureTripletId] += 1;
-        if (tripletCount[futureTripletId] <= parameters.lowComplexityThreshold) {
-          print(readId, readString, readPos-1, os, nextPos, tripletCount, futureTripletId);
-        }
-        if (depth3) tripletCount[futureTripletId] -= 1;
+        print(readId, readString, readPos-1, os, nextPos);
       }
     }
   }
@@ -200,8 +208,7 @@ public:
 std::ostream & operator<<(std::ostream & os, const Tree & t) {
   std::string readString (t.getDepth()+1, 0);
   unsigned int readId = 0;
-  std::vector < unsigned int > tripletCounts (N_TRIPLETS, 0);
-  t.print(readId, readString, t.getDepth()-1, os, 0, tripletCounts, 0);
+  t.print(readId, readString, t.getDepth()-1, os, 0);
   return os;
 }
 
