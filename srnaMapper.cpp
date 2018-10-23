@@ -143,19 +143,17 @@ public:
     for (size_t i = sequence.size(); i > 0; --i) {
       char c = sequence[i-1];
       int  b = getCode(c);
-      if ((! isTriplet) && (i <= sequence.size() - TRIPLET)) {
-        isTriplet = true;
-      }
-      if (isTriplet) {
-        tripletId %= TRIPLET_MASK;
-      }
       tripletId *= N_NUCLEOTIDES;
       tripletId += b;
+      if ((! isTriplet) && (i <= sequence.size() - TRIPLET + 1)) {
+        isTriplet = true;
+      }
       if (isTriplet) {
         tripletCounts[tripletId] += 1;
         if (tripletCounts[tripletId] >= parameters.lowComplexityThreshold) {
           return;
         }
+        tripletId %= TRIPLET_MASK;
       }
       if (sequences[pos][b] == NO_DATA) {
         createCell();
