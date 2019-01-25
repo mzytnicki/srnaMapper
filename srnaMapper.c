@@ -34,6 +34,7 @@
 // Parse parameters
 // ==========================================================================
 
+#include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
@@ -54,6 +55,7 @@
 #define TRIPLET_MASK    15
 
 #define MAX_HITS        20
+#define N_STATES        0x10000
 
 #define INIT_N_CELLS 0x1000000
 
@@ -153,6 +155,7 @@ void createCell (cell_t *cell) {
   for (unsigned short i = 0; i < N_NUCLEOTIDES; ++i) {
     cell->children[i] = NO_DATA;
   }
+  //printf("%u %zu %p\n", parameters->nReadsFiles, sizeof(count_t), cell);
   cell->counts = (count_t *) calloc(parameters->nReadsFiles, sizeof(count_t));
   cell->quality = NULL;
 }
@@ -168,6 +171,8 @@ void setQuality (cell_t *cell, size_t l, char *quality, unsigned int fileId) {
     cell->quality = strdup(quality);
   }
   else {
+    assert(strlen(cell->quality) == strlen(quality));
+    assert(strlen(cell->quality) == l);
     for (size_t i = 0; i < l; ++i) {
       cell->quality[i] = MAX(cell->quality[i], quality[i]);
     }
@@ -185,11 +190,14 @@ void createTree (tree_t *tree) {
   tree->nAllocated = INIT_N_CELLS;
   tree->cells = (cell_t *) malloc(tree->nAllocated * sizeof(cell_t));
   tree->depth = 0;
-  tree->nCells = 0;
+  tree->nCells = 1;
   createCell(&tree->cells[0]);
 }
 
 void freeTree (tree_t *tree) {
+  tree->nAllocated = 0;
+  tree->depth = 0;
+  tree->nCells = 0;
   for (uint64_t i = 0; i < tree->nCells; ++i) {
     freeCell(&tree->cells[i]);
   }
@@ -199,11 +207,13 @@ void freeTree (tree_t *tree) {
 uint64_t addCell (tree_t *tree) {
   if (tree->nCells == tree->nAllocated) {
     tree->nAllocated *= 2;
+    //printf("reallocating cells...\n");
     if ((tree->cells = (cell_t *) realloc(tree->cells, tree->nAllocated * sizeof(cell_t))) == NULL) {
       printf("Cannot allocate memory for tree of size %lu.\nExiting.\n", tree->nAllocated);
       exit(EXIT_FAILURE);
     }
   }
+  //printf("ncells: %zu / %zu\n", tree->nCells, tree->nAllocated);
   createCell(&tree->cells[tree->nCells]);
   ++tree->nCells;
   return tree->nCells-1;
@@ -223,6 +233,8 @@ uint64_t goDown (tree_t *tree, uint64_t cellId, unsigned short childId) {
 
 void addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigned int fileId) {
   uint64_t cellId = 0;
+  assert(strlen(sequence) == strlen(quality));
+  assert(strlen(quality) == l);
   for (int sequenceId = l-1; sequenceId >= 0; --sequenceId) {
     cellId = goDown(tree, cellId, CHAR_TO_DNA5[(int) sequence[sequenceId]]);
   }
@@ -291,6 +303,8 @@ int readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
     getline(&sequence, &len, inFile);
     getline(&line, &len, inFile);
     nRead = getline(&quality, &len, inFile);
+    assert(strlen(sequence) == strlen(quality));
+    assert(strlen(sequence) == (unsigned long) nRead);
     trimSequence(nRead, sequence);
     trimSequence(nRead, quality);
     addSequence(tree, nRead-1, sequence, quality, fileId);
@@ -310,44 +324,76 @@ bwaidx_t *loadGenomeFile (char *indexName) {
   return idx;
 }
 
-void _map (const bwt_t *bwt, const bntseq_t *bns, bwtint_t k, bwtint_t l, const tree_t *tree, uint64_t cellId, size_t readPos, char *read, unsigned short triplet, count_t *tripletCount) {
-  bwtint_t nk, nl, ok, ol;
-  cell_t *cell = &tree->cells[cellId];
+typedef struct {
+  bwtint_t k, l;
+  uint64_t cellId;
+  size_t readPos;
+  unsigned short triplet;
+  count_t tripletCount[N_TRIPLETS];
+} state_t;
+
+typedef struct {
+  bwtint_t k, l;
+  uint64_t cellId;
+  size_t readPos;
+  unsigned short triplet;
+  count_t tripletCount[N_TRIPLETS];
+  unsigned short triedNt;
+} unfolded_state_t;
+
+state_t states[N_STATES];
+unfolded_state_t unfolded_states[N_STATES];
+
+void setNextUnfoldedState (size_t firstStateId) {
+  size_t secondStateId = firstStateId + 1;
+  unfolded_state_t *firstState  = unfolded_states + firstStateId;
+  unfolded_state_t *secondState = unfolded_states + secondStateId;
+  secondState->readPos = firstState->readPos+1;
+  secondState->triplet = (firstState->triplet & TRIPLET_MASK) << NUCLEOTIDES_BITS;
+  secondState->triedNt = firstState->triedNt;
+  for (size_t i = 0; i < N_TRIPLETS; ++i) {
+    secondState->tripletCount[i] = firstState->tripletCount[i];
+  }
+}
+
+void _map (const bwt_t *bwt, const bntseq_t *bns, const tree_t *tree, char *read, unsigned int stateId) {
+  bwtint_t ok, ol;
+  cell_t *cell = &tree->cells[unfolded_states[stateId].cellId];
   int64_t pos;
-  uint64_t nextCellId;
   int strand, rid;
   unsigned short nextTriplet;
   if (cell->quality) {
-    printf("Mapped '%s'\n", read+tree->depth-readPos);
-    if (l - k + 1 > MAX_HITS) {
-      printf("\t%lu hits\n", l - k + 1);
+    printf("Mapped '%s'\n", read+tree->depth-unfolded_states[stateId].readPos);
+    if (unfolded_states[stateId].l - unfolded_states[stateId].k + 1 > MAX_HITS) {
+      printf("\t%lu hits\n", unfolded_states[stateId].l - unfolded_states[stateId].k + 1);
     }
     else {
-      for (bwtint_t i = k; i <= l; ++i) {
-        pos = bwa_sa2pos(bns, bwt, i, readPos, &strand);
+      for (bwtint_t i = unfolded_states[stateId].k; i <= unfolded_states[stateId].l; ++i) {
+        pos = bwa_sa2pos(bns, bwt, i, unfolded_states[stateId].readPos, &strand);
         rid = bns_pos2rid(bns, pos);
         pos = pos - bns->anns[rid].offset;
         printf("\t%d %" PRId64 " (%c)\n", rid, pos, "-+"[strand]);
       }
     }
   }
-  triplet &= TRIPLET_MASK;
-  triplet <<= NUCLEOTIDES_BITS;
+  if (stateId+1 == N_STATES) return;
+  setNextUnfoldedState(stateId);
+  nextTriplet = unfolded_states[stateId+1].triplet;
   for (unsigned short i = 0; i < N_NUCLEOTIDES; ++i) {
-    nextCellId = cell->children[i];
-    if (nextCellId != NO_DATA) {
-      nextTriplet = triplet | i;
-      if (readPos >= TRIPLET-1) tripletCount[nextTriplet] += 1;
-      if (tripletCount[nextTriplet] <= parameters->lowComplexityThreshold) {
-        bwt_2occ(bwt, k-1, l, i, &ok, &ol);
-        nk = bwt->L2[i] + ok + 1;
-        nl = bwt->L2[i] + ol;
-        if (nk <= nl) {
-          read[tree->depth-readPos-1] = DNA5_TO_CHAR[i];
-          _map(bwt, bns, nk, nl, tree, nextCellId, readPos+1, read, nextTriplet, tripletCount);
+    unfolded_states[stateId+1].cellId = cell->children[i];
+    if (unfolded_states[stateId+1].cellId != NO_DATA) {
+      unfolded_states[stateId+1].triplet = nextTriplet | i;
+      if (unfolded_states[stateId+1].readPos >= TRIPLET-1) unfolded_states[stateId+1].tripletCount[nextTriplet] += 1;
+      if (unfolded_states[stateId+1].tripletCount[nextTriplet] <= parameters->lowComplexityThreshold) {
+        bwt_2occ(bwt, unfolded_states[stateId].k-1, unfolded_states[stateId].l, i, &ok, &ol);
+        unfolded_states[stateId+1].k = bwt->L2[i] + ok + 1;
+        unfolded_states[stateId+1].l = bwt->L2[i] + ol;
+        if (unfolded_states[stateId+1].k <= unfolded_states[stateId+1].l) {
+          read[tree->depth-unfolded_states[stateId+1].readPos-1] = DNA5_TO_CHAR[i];
+          _map(bwt, bns, tree, read, stateId+1);
         }
       }
-      if (readPos >= TRIPLET-1) tripletCount[nextTriplet] -= 1;
+      if (unfolded_states[stateId+1].readPos >= TRIPLET-1) unfolded_states[stateId+1].tripletCount[nextTriplet] -= 1;
     }
   }
 }
@@ -355,9 +401,14 @@ void _map (const bwt_t *bwt, const bntseq_t *bns, bwtint_t k, bwtint_t l, const 
 void map (const bwt_t *bwt, const bntseq_t *bns, const tree_t *tree) {
   char *read = (char *) malloc((tree->depth+1) * sizeof(char));
   read[tree->depth] = 0;
-  count_t tripletCount [N_TRIPLETS];
-  for (unsigned int i = 0; i < N_TRIPLETS; ++i) tripletCount[i] = 0;
-  _map(bwt, bns, 0, bwt->seq_len, tree, 0, 0, read, 0, tripletCount);
+  unfolded_states[0].k = 0;
+  unfolded_states[0].l = bwt->seq_len;
+  unfolded_states[0].cellId = 0;
+  unfolded_states[0].readPos = 0;
+  unfolded_states[0].triplet = 0;
+  unfolded_states[0].triedNt = N_NUCLEOTIDES;
+  for (unsigned int i = 0; i < N_TRIPLETS; ++i) unfolded_states[0].tripletCount[i] = 0;
+  _map(bwt, bns, tree, read, 0);
   free(read);
 }
 
