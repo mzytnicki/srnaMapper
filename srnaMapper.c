@@ -376,10 +376,12 @@ void _map (const bwt_t *bwt, const bntseq_t *bns, const tree_t *tree, char *read
       }
     }
   }
-  if (stateId+1 == N_STATES) return;
+  assert(stateId+1 < N_STATES);
   setNextUnfoldedState(stateId);
   nextTriplet = unfolded_states[stateId+1].triplet;
+  //printf("Now at pos %zu, cell id %lu read '%s', and depth %u\n", unfolded_states[stateId].readPos, unfolded_states[stateId].cellId, read+tree->depth-unfolded_states[stateId].readPos, stateId);
   for (unsigned short i = 0; i < N_NUCLEOTIDES; ++i) {
+    //printf("\tTesting nt. %d\n", i);
     unfolded_states[stateId+1].cellId = cell->children[i];
     if (unfolded_states[stateId+1].cellId != NO_DATA) {
       unfolded_states[stateId+1].triplet = nextTriplet | i;
@@ -389,12 +391,16 @@ void _map (const bwt_t *bwt, const bntseq_t *bns, const tree_t *tree, char *read
         unfolded_states[stateId+1].k = bwt->L2[i] + ok + 1;
         unfolded_states[stateId+1].l = bwt->L2[i] + ol;
         if (unfolded_states[stateId+1].k <= unfolded_states[stateId+1].l) {
-          read[tree->depth-unfolded_states[stateId+1].readPos-1] = DNA5_TO_CHAR[i];
+          read[tree->depth-unfolded_states[stateId].readPos-1] = DNA5_TO_CHAR[i];
           _map(bwt, bns, tree, read, stateId+1);
+          //printf("\tback\n");
         }
+        //else { printf("\t\tNo match in the BWT\n"); }
       }
+      //else { printf("\t\tLow complexity\n"); }
       if (unfolded_states[stateId+1].readPos >= TRIPLET-1) unfolded_states[stateId+1].tripletCount[nextTriplet] -= 1;
     }
+    //else { printf("\t\tNo match in the tree\n"); }
   }
 }
 
