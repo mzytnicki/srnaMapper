@@ -66,6 +66,11 @@
 
 #define NO_DATA        0
 
+#define MATCH          0x8
+#define MISMATCH       0x10
+#define INSERTION      0x20
+#define DELETION       0x40
+
 typedef unsigned long count_t;
 
 const char DNA5_TO_CHAR [5] = { 'A', 'C', 'G', 'T', 'N' };
@@ -412,10 +417,13 @@ bwaidx_t *loadGenomeFile (char *indexName) {
   return idx;
 }
 
-typedef struct {
-  bwtint_t k, l;
-} state_t;
+typedef struct state_t state_t;
 
+struct state_t {
+  bwtint_t k, l;
+  unsigned char trace;
+  struct state_t *previousState;
+};
 
 void printState(state_t *state, size_t maxDepth) {
   size_t s = 0;
@@ -523,7 +531,7 @@ size_t simplifyStates (state_t *states, size_t nStates) {
   return (firstStateId+1);
 }
 
-bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state) {
+bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state, unsigned char trace) {
   //printf("\t\t\tAdding one state (%" PRIu64 ", %" PRIu64 ") at (depth = %zu, # errors = %zu), %zu/%d occupied\n", state->k, state->l, depth, nErrors, states->nStates[depth][nErrors], N_STATES);
   //printState(state, states->treeSize);
   if (states->nStates[depth][nErrors] == N_STATES_STORED-1) {
@@ -532,7 +540,11 @@ bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state) {
     states->nStates[depth][nErrors] = N_STATES;
     return false;
   }
-  states->states[depth][nErrors][states->nStates[depth][nErrors]] = *state;
+  state_t *newState = &states->states[depth][nErrors][states->nStates[depth][nErrors]];
+  newState->k = state->k;
+  newState->l = state->l;
+  newState->previousState = state;
+  newState->trace = trace;
   ++states->nStates[depth][nErrors];
   ++states->nStatesPerPosition[depth];
   if (states->minErrors[depth] == SIZE_MAX) {
@@ -557,27 +569,29 @@ void initializeStates(states_t *states, size_t treeSize) {
   states->nStatesPerPosition = (size_t *)    calloc((treeSize+1),  sizeof(size_t));
   states->minErrors          = (size_t *)    malloc((treeSize+1) * sizeof(size_t));
   states->maxErrors          = (size_t *)    malloc((treeSize+1) * sizeof(size_t));
-  for (size_t i = 0; i <= treeSize; ++i) {
-    states->states[i]    = (state_t **) malloc((parameters->maxNErrors+1) * sizeof(states_t *));
-    states->nStates[i]   = (size_t *)   calloc((parameters->maxNErrors+1),  sizeof(size_t));
-    states->minErrors[i] = SIZE_MAX;
-    states->maxErrors[i] = SIZE_MAX;
-    for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
-      states->states[i][j] = (state_t *) malloc(N_STATES_STORED * sizeof(states_t));
+  for (size_t depth = 0; depth <= treeSize; ++depth) {
+    states->states[depth]    = (state_t **) malloc((parameters->maxNErrors+1) * sizeof(states_t *));
+    states->nStates[depth]   = (size_t *)   calloc((parameters->maxNErrors+1),  sizeof(size_t));
+    states->minErrors[depth] = SIZE_MAX;
+    states->maxErrors[depth] = SIZE_MAX;
+    for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
+      states->states[depth][nErrors] = (state_t *) malloc(N_STATES_STORED * sizeof(states_t));
     }
   }
-  state_t baseState = { 0, bwt->seq_len };
+  state_t baseState = { 0, bwt->seq_len, 0, NULL };
+  addState(states, 0, 0, &baseState, 0);
+  /*
   state_t state;
-  addState(states, 0, 0, &baseState);
   for (size_t nErrors = 1; nErrors <= parameters->maxNErrors; ++nErrors) {
     for (size_t stateId = 0; stateId < states->nStates[0][nErrors-1]; ++stateId) {
       for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
         if (goDownBwt(&states->states[0][nErrors-1][stateId], nt, &state)) {
-          addState(states, 0, nErrors, &state);
+          addState(states, 0, nErrors, &state, INSERTION);
         }
       }
     }
   }
+  */
 }
 
 /*
@@ -767,24 +781,27 @@ bool mapOneNucleotide (const bwt_t *bwt, states_t *states, unsigned short nucleo
 
 void printRead (states_t *states, path_t *path, char *quality, count_t *counts, FILE *outputSamFile) {
   static unsigned long nReads = 0;
-  size_t readLength = path->depth;
+  size_t depth = path->depth;
+  size_t readLength = depth;
   char qname[255];
   unsigned int flag;
   int64_t pos;
   unsigned int mapq;
-  //char *cigar;
+  char cigar[255];
   char *forwardSeq = path->read + path->readPos;
   char *backwardSeq = NULL;
   char *seq;
   char *forwardQual = quality;
   char *backwardQual = NULL;
   char *qual = NULL;
+  state_t *state, *currentState;
   int strand, rid;
   bwtint_t nHits = 0;
   unsigned int hitId = 0;
-  unsigned int nErrors = states->minErrors[path->depth];
-  size_t nStates = states->nStates[path->depth][nErrors];
-  state_t *theseStates = states->states[path->depth][nErrors];
+  unsigned int nErrors = states->minErrors[depth];
+  size_t nStates = states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
+  state_t *theseStates = states->states[depth][nErrors];
+  unsigned char *backtrace = (unsigned char *) malloc(2 * (path->maxDepth+1) * sizeof(unsigned char));
   sprintf(qname, "read%lu_x", ++nReads);
   for (size_t readsFileId = 0; readsFileId < parameters->nReadsFiles; ++readsFileId) {
     sprintf(qname+strlen(qname), "_%lu", counts[readsFileId]);
@@ -792,14 +809,15 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   for (size_t i = 0; i < nStates; ++i) {
     nHits += theseStates[i].l - theseStates[i].k + 1;
   }
-  //fprintf(outputSamFile, "Mapped '%s' with %zu error(s) at depth %zu\n", path->read + path->readPos, states->minErrors[path->depth], path->depth);
   if (nHits > MAX_HITS) {
-    fprintf(outputSamFile, "%s\t4\t*\t0\t0\t*\t*\t0\t0\t%s\t%s\tNH:i:%lu\tNM:i:%zu\n", qname, forwardSeq, forwardQual, nHits, states->minErrors[path->depth]);
+    fprintf(outputSamFile, "%s\t4\t*\t0\t0\t*\t*\t0\t0\t%s\t%s\tNH:i:%lu\tNM:i:%u\n", qname, forwardSeq, forwardQual, nHits, nErrors);
     return;
   }
   for (size_t stateId = 0; stateId < nStates; ++stateId) {
-    for (bwtint_t j = theseStates[stateId].k; j <= theseStates[stateId].l; ++j) {
-      if (nHits > 1) {
+    state = &theseStates[stateId];
+    currentState = state;
+    for (bwtint_t j = state->k; j <= state->l; ++j) {
+      if ((nHits > 1) || (nErrors >= 40)) {
         mapq = 0;
       }
       else {
@@ -810,7 +828,6 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
       pos = bwa_sa2pos(bns, bwt, j, path->depth, &strand);
       rid = bns_pos2rid(bns, pos);
       pos = pos - bns->anns[rid].offset + 1;
-      //fprintf(outputSamFile, "\t%d %" PRId64 " (%c)\n", rid, pos, "-+"[strand]);
       if (strand == 0) {
         flag |= 0x10;
         if (backwardSeq  == NULL) backwardSeq  = reverseComplementSequence(forwardSeq, readLength);
@@ -821,13 +838,13 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
       else {
         seq  = forwardSeq;
         qual = forwardQual;
-
       }
       fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t%d\t%zuM\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", qname, flag, bns->anns[rid].name, pos, mapq, readLength, seq, qual, nHits, hitId, nHits, nErrors);
     }
   }
   if (backwardSeq) free(backwardSeq);
   if (backwardQual) free(backwardQual);
+  free(backtrace);
 }
 
 bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t nErrors) {
@@ -839,7 +856,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
     if (goDownBwt(&states->states[depth-1][nErrors][stateId], nt, &nextState)) {
       mapFound = true;
       //printState(&nextState, depth);
-      if (! addState(states, depth, nErrors, &nextState)) {
+      if (! addState(states, depth, nErrors, &nextState, MATCH)) {
         //printf("      cannot add state\n");
         return false;
       }
@@ -862,7 +879,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors-1]; ++stateId) {
     state_t *state = &states->states[depth-1][nErrors-1][stateId];
     //printState(state, path->maxDepth);
-    if (! addState(states, depth, nErrors, state)) {
+    if (! addState(states, depth, nErrors, state, INSERTION)) {
       //printf("      second case\n");
       return false;
     }
@@ -871,7 +888,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
         //addState(states, depth-1, nErrors, &newState);
         if (nt != path->nucleotides[depth-1]) {
           //printState(newState, path->maxDepth);
-          if (! addState(states, depth, nErrors, newState)) {
+          if (! addState(states, depth, nErrors, newState, MISMATCH | nt)) {
             //printf("      third case\n");
             return false;
           }
@@ -883,7 +900,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
     state_t *state = &states->states[depth][nErrors-1][stateId];
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
       if (goDownBwt(state, nt, newState)) {
-        if (! addState(states, depth, nErrors, newState)) {
+        if (! addState(states, depth, nErrors, newState, DELETION | nt)) {
           return false;
         }
       }
@@ -983,7 +1000,7 @@ void _map (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFi
   }
   */
 }
-FILE *printSAMHeader() {
+FILE *printSamHeader() {
   FILE *outputSamFile = fopen(parameters->outputSamFileName, "w");
   if (outputSamFile == NULL) {
     return NULL;
@@ -1037,7 +1054,7 @@ int main(int argc, char const ** argv) {
   pac = idx->pac;
   bwt = idx->bwt;
   bns = idx->bns;
-  FILE *outputSamFile = printSAMHeader();
+  FILE *outputSamFile = printSamHeader();
   if (outputSamFile == NULL) {
     printf("Error!  Cannot write to output SAM file '%s'.\nExiting.\n", param.outputSamFileName);
   }
