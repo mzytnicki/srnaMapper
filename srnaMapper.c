@@ -1,38 +1,36 @@
-  // ==========================================================================
-  //                              srnaMapper
-  // ==========================================================================
-  // Copyright (C) 2018 Matthias Zytnicki, INRA
-  // All rights reserved.
-  //
-  // Redistribution and use in source and binary forms, with or without
-  // modification, are permitted provided that the following conditions are met:
-  //
-  //     * Redistributions of source code must retain the above copyright
-  //       notice, this list of conditions and the following disclaimer.
-  //     * Redistributions in binary form must reproduce the above copyright
-  //       notice, this list of conditions and the following disclaimer in the
-  //       documentation and/or other materials provided with the distribution.
-  //     * Neither the name of Knut Reinert or the FU Berlin nor the names of
-  //       its contributors may be used to endorse or promote products derived
-  //       from this software without specific prior written permission.
-  //
-  // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-  // AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-  // IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-  // ARE DISCLAIMED. IN NO EVENT SHALL KNUT REINERT OR THE FU BERLIN BE LIABLE
-  // FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-  // DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-  // SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-  // CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-  // LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
-  // OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
-  // DAMAGE.
-  //
-  // ==========================================================================
-  // Author: Matthias Zytnicki <matthias.zytnicki@inra.fr>
-  // ==========================================================================
-  // Parse parameters
-  // ==========================================================================
+// ==========================================================================
+//                              srnaMapper
+// ==========================================================================
+// Copyright (C) 2018 Matthias Zytnicki, INRA
+// All rights reserved.
+//
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions are met:
+//
+//     * Redistributions of source code must retain the above copyright
+//       notice, this list of conditions and the following disclaimer.
+//     * Redistributions in binary form must reproduce the above copyright
+//       notice, this list of conditions and the following disclaimer in the
+//       documentation and/or other materials provided with the distribution.
+//     * Neither the name of Matthias Zytnicki or the INRA nor the names of
+//       its contributors may be used to endorse or promote products derived
+//       from this software without specific prior written permission.
+//
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+// ARE DISCLAIMED. IN NO EVENT SHALL MATTHIAS ZYTNICKI NOTR THE INRA BE LIABLE
+// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+// OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH
+// DAMAGE.
+//
+// ==========================================================================
+// Author: Matthias Zytnicki <matthias.zytnicki@inra.fr>
+// ==========================================================================
 
 #include <stdbool.h>
 #include <assert.h>
@@ -66,10 +64,10 @@
 
 #define NO_DATA        0
 
-#define MATCH          0x8
-#define MISMATCH       0x10
-#define INSERTION      0x20
-#define DELETION       0x40
+#define MATCH          0
+#define MISMATCH       4
+#define INSERTION      5
+#define DELETION       6
 
 typedef unsigned long count_t;
 
@@ -104,6 +102,8 @@ const char COMP [127] = {
  0,   0, 0,   0,   0, 'A', 'A',   0, 0,   0, // 110
  0,   0, 0,   0,   0,   0,   0               // 120
 };
+
+const char CIGAR [4] = { '=', 'X', 'I', 'D' };
 
 bwt_t *bwt;
 uint8_t *pac;
@@ -463,7 +463,7 @@ void printState(state_t *state, size_t maxDepth) {
     tmpSeq2[i] = tmpSeq1[s-i-1];
   }
   tmpSeq2[s] = 0;
-  printf("\t\t\t\t%" PRIu64 "-%" PRIu64 ": %s\n", state->k, state->l, tmpSeq2);
+  printf("\t\t\t\t%" PRIu64 "-%" PRIu64 ": %s (%i/%i -> %p)\n", state->k, state->l, tmpSeq2, state->trace >> 2, state->trace & 3, state->previousState);
 }
 
 bool goDownBwt (state_t *previousState, unsigned short nucleotide, state_t *newState) {
@@ -531,7 +531,7 @@ size_t simplifyStates (state_t *states, size_t nStates) {
   return (firstStateId+1);
 }
 
-bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state, unsigned char trace) {
+bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state, unsigned char trace, state_t *previousState) {
   //printf("\t\t\tAdding one state (%" PRIu64 ", %" PRIu64 ") at (depth = %zu, # errors = %zu), %zu/%d occupied\n", state->k, state->l, depth, nErrors, states->nStates[depth][nErrors], N_STATES);
   //printState(state, states->treeSize);
   if (states->nStates[depth][nErrors] == N_STATES_STORED-1) {
@@ -543,7 +543,7 @@ bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state, un
   state_t *newState = &states->states[depth][nErrors][states->nStates[depth][nErrors]];
   newState->k = state->k;
   newState->l = state->l;
-  newState->previousState = state;
+  newState->previousState = previousState;
   newState->trace = trace;
   ++states->nStates[depth][nErrors];
   ++states->nStatesPerPosition[depth];
@@ -579,7 +579,7 @@ void initializeStates(states_t *states, size_t treeSize) {
     }
   }
   state_t baseState = { 0, bwt->seq_len, 0, NULL };
-  addState(states, 0, 0, &baseState, 0);
+  addState(states, 0, 0, &baseState, 0, NULL);
   /*
   state_t state;
   for (size_t nErrors = 1; nErrors <= parameters->maxNErrors; ++nErrors) {
@@ -658,7 +658,7 @@ void printPath (path_t *path) {
 
 void initializePath (path_t *path, size_t maxDepth) {
   path->nucleotides    = malloc(maxDepth * sizeof(unsigned short));
-  path->cellIds        = malloc(maxDepth * sizeof(uint64_t));
+  path->cellIds        = malloc((maxDepth+1) * sizeof(uint64_t));
   path->read           = malloc((maxDepth+1) * sizeof(char));
   path->maxDepth       = maxDepth;
   path->depth          = 0;
@@ -787,7 +787,14 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   unsigned int flag;
   int64_t pos;
   unsigned int mapq;
-  char cigar[255];
+  char *cigar;
+  unsigned char backtraceLengths[255];
+  char backtraceCigar[255];
+  size_t backtraceSize;
+  char forwardCigar[255];
+  char backwardCigar[255];
+  size_t forwardCigarSize = 0;
+  size_t backwardCigarSize = 0;
   char *forwardSeq = path->read + path->readPos;
   char *backwardSeq = NULL;
   char *seq;
@@ -801,7 +808,6 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   unsigned int nErrors = states->minErrors[depth];
   size_t nStates = states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
   state_t *theseStates = states->states[depth][nErrors];
-  unsigned char *backtrace = (unsigned char *) malloc(2 * (path->maxDepth+1) * sizeof(unsigned char));
   sprintf(qname, "read%lu_x", ++nReads);
   for (size_t readsFileId = 0; readsFileId < parameters->nReadsFiles; ++readsFileId) {
     sprintf(qname+strlen(qname), "_%lu", counts[readsFileId]);
@@ -813,16 +819,43 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
     fprintf(outputSamFile, "%s\t4\t*\t0\t0\t*\t*\t0\t0\t%s\t%s\tNH:i:%lu\tNM:i:%u\n", qname, forwardSeq, forwardQual, nHits, nErrors);
     return;
   }
+  if (nErrors == 0) {
+    sprintf(forwardCigar, "%zu=", readLength);
+    strcpy(backwardCigar, forwardCigar);
+  }
+  if ((nHits > 1) || (nErrors >= 40)) {
+    mapq = 0;
+  }
+  else {
+    mapq = 40 - nErrors;
+  }
   for (size_t stateId = 0; stateId < nStates; ++stateId) {
     state = &theseStates[stateId];
-    currentState = state;
+    if (nErrors != 0) {
+      currentState = state;
+      backtraceSize = 0;
+      while (currentState != NULL) {
+        char cigar = CIGAR[currentState->trace >> 2];
+        if ((backtraceSize == 0) || (backtraceCigar[backtraceSize-1] != cigar)) {
+          backtraceCigar[backtraceSize] = cigar;
+          backtraceLengths[backtraceSize] = 1;
+          ++backtraceSize;
+        }
+        else {
+          ++backtraceLengths[backtraceSize-1];
+        }
+        currentState = currentState->previousState;
+      }
+      //TODO Optimize this
+      forwardCigarSize = backwardCigarSize = 0;
+      for (size_t backtraceId = 0; backtraceId < backtraceSize; ++backtraceId) {
+        forwardCigarSize  += sprintf(forwardCigar+forwardCigarSize,   "%i%c", backtraceLengths[backtraceId], backtraceCigar[backtraceId]);
+        backwardCigarSize += sprintf(backwardCigar+backwardCigarSize, "%i%c", backtraceLengths[backtraceSize-backtraceId-1], backtraceCigar[backtraceSize-backtraceId-1]);
+      }
+      forwardCigar[forwardCigarSize] = 0;
+      backwardCigar[backwardCigarSize] = 0;
+    }
     for (bwtint_t j = state->k; j <= state->l; ++j) {
-      if ((nHits > 1) || (nErrors >= 40)) {
-        mapq = 0;
-      }
-      else {
-        mapq = 40 - nErrors;
-      }
       flag = (hitId == 0)? 0: 0x100;
       ++hitId;
       pos = bwa_sa2pos(bns, bwt, j, path->depth, &strand);
@@ -834,29 +867,32 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
         if (backwardQual == NULL) backwardQual = reverseSequence(forwardQual, readLength);
         seq  = backwardSeq;
         qual = backwardQual;
+        cigar = backwardCigar;
       }
       else {
         seq  = forwardSeq;
         qual = forwardQual;
+        cigar = forwardCigar;
       }
-      fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t%d\t%zuM\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", qname, flag, bns->anns[rid].name, pos, mapq, readLength, seq, qual, nHits, hitId, nHits, nErrors);
+      fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", qname, flag, bns->anns[rid].name, pos, mapq, cigar, seq, qual, nHits, hitId, nHits, nErrors);
     }
   }
   if (backwardSeq) free(backwardSeq);
   if (backwardQual) free(backwardQual);
-  free(backtrace);
 }
 
 bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t nErrors) {
   assert(depth > 0);
+  state_t *previousState;
   state_t nextState;
   bool mapFound = false;
   //printf("    Mapping %hu without error at depth %zu with %zu errors and %zu states\n", nt, depth, nErrors, states->nStates[depth-1][nErrors]);
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
-    if (goDownBwt(&states->states[depth-1][nErrors][stateId], nt, &nextState)) {
+    previousState = &states->states[depth-1][nErrors][stateId];
+    if (goDownBwt(previousState, nt, &nextState)) {
       mapFound = true;
       //printState(&nextState, depth);
-      if (! addState(states, depth, nErrors, &nextState, MATCH)) {
+      if (! addState(states, depth, nErrors, &nextState, MATCH, previousState)) {
         //printf("      cannot add state\n");
         return false;
       }
@@ -879,7 +915,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors-1]; ++stateId) {
     state_t *state = &states->states[depth-1][nErrors-1][stateId];
     //printState(state, path->maxDepth);
-    if (! addState(states, depth, nErrors, state, INSERTION)) {
+    if (! addState(states, depth, nErrors, state, INSERTION, state)) {
       //printf("      second case\n");
       return false;
     }
@@ -888,7 +924,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
         //addState(states, depth-1, nErrors, &newState);
         if (nt != path->nucleotides[depth-1]) {
           //printState(newState, path->maxDepth);
-          if (! addState(states, depth, nErrors, newState, MISMATCH | nt)) {
+          if (! addState(states, depth, nErrors, newState, MISMATCH | nt, state)) {
             //printf("      third case\n");
             return false;
           }
@@ -900,7 +936,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
     state_t *state = &states->states[depth][nErrors-1][stateId];
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
       if (goDownBwt(state, nt, newState)) {
-        if (! addState(states, depth, nErrors, newState, DELETION | nt)) {
+        if (! addState(states, depth, nErrors, newState, DELETION | nt, state)) {
           return false;
         }
       }
