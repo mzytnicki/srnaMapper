@@ -45,6 +45,8 @@
 #include "Libs/bwa/bwa.h"
 #include "Libs/bwa/bwase.h"
 
+#define DEPTH_SHORT_CUT 11
+
 #define _get_pac(pac, l) ((pac)[(l)>>2]>>((~(l)&3)<<1)&3)
 
 #define MAX(a,b) (((a)>(b))?(a):(b))
@@ -69,9 +71,15 @@
 #define INSERTION      5
 #define DELETION       6
 
+#define CIGAR_SECONDARY_HIT 0x100
+#define CIGAR_REVERSE 0x10
+
 typedef unsigned long count_t;
 
 const char DNA5_TO_CHAR [5] = { 'A', 'C', 'G', 'T', 'N' };
+const unsigned char DNA5_TO_INT_REV [2][5] = { { 0, 1, 2, 3, 4 }, { 0, 1, 2, 3, 4 }};
+const char DNA5_TO_CHAR_REV [2][5] = {"ACGTN", "TGCAN"};
+
 const int  CHAR_TO_DNA5 [127] = {
  4, 4, 4, 4, 4, 4, 4, 4, 4, 4, //   0
  4, 4, 4, 4, 4, 4, 4, 4, 4, 4, //  10
@@ -108,6 +116,8 @@ const char CIGAR [4] = { '=', 'X', 'I', 'D' };
 bwt_t *bwt;
 uint8_t *pac;
 bntseq_t *bns;
+unsigned long nReads;
+
 
 void trimSequence (size_t l, char *s) {
   s[l-1] = 0;
@@ -651,9 +661,13 @@ typedef struct {
 } path_t;
 
 void printPath (path_t *path) {
-  for (size_t i = 0; i <= path->depth; ++i) {
-    printf("\t\t\t\t%c\n", "ACGT"[(int) path->nucleotides]);
+  assert(path->depth < path->maxDepth);
+  printf("\t\t\t\t");
+  for (size_t i = 0; i < path->depth; ++i) {
+    assert(path->nucleotides[i] < N_NUCLEOTIDES);
+    printf("%c ", "ACGT"[(int) path->nucleotides[i]]);
   }
+  printf("\n");
 }
 
 void initializePath (path_t *path, size_t maxDepth) {
@@ -779,8 +793,32 @@ bool mapOneNucleotide (const bwt_t *bwt, states_t *states, unsigned short nucleo
 }
 */
 
+void writeQname (char *qname, count_t *counts) {
+  size_t qnameLength = sprintf(qname, "read%lu_x", ++nReads);
+  for (size_t readsFileId = 0; readsFileId < parameters->nReadsFiles; ++readsFileId) {
+    qnameLength += sprintf(qname+qnameLength, "_%lu", counts[readsFileId]);
+  }
+}
+
+void printReadUniqueNoError (int strand, char *chrName, int64_t pos, size_t readLength, char *sequence, char *quality, count_t *counts, FILE *outputSamFile) {
+  char qname[255];
+  unsigned int flag = 0;
+  char *seq = sequence;
+  char *qual = quality;
+  if (strand == 0) {
+    flag = CIGAR_REVERSE;
+    seq  = reverseComplementSequence(sequence, readLength);
+    qual = reverseSequence(quality, readLength);
+  }
+  writeQname(qname, counts);
+  fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t40\t%zuM\t*\t0\t0\t%s\t%s\tNH:i:1\tHI:i:1\tIH:i:1\tNM:i:0\n", qname, flag, chrName, pos, readLength, seq, qual);
+  if (strand == 0) {
+    free(seq);
+    free(qual);
+  }
+}
+
 void printRead (states_t *states, path_t *path, char *quality, count_t *counts, FILE *outputSamFile) {
-  static unsigned long nReads = 0;
   size_t depth = path->depth;
   size_t readLength = depth;
   char qname[255];
@@ -808,15 +846,19 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   unsigned int nErrors = states->minErrors[depth];
   size_t nStates = states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
   state_t *theseStates = states->states[depth][nErrors];
-  sprintf(qname, "read%lu_x", ++nReads);
-  for (size_t readsFileId = 0; readsFileId < parameters->nReadsFiles; ++readsFileId) {
-    sprintf(qname+strlen(qname), "_%lu", counts[readsFileId]);
-  }
+  writeQname(qname, counts);
   for (size_t i = 0; i < nStates; ++i) {
     nHits += theseStates[i].l - theseStates[i].k + 1;
   }
   if (nHits > MAX_HITS) {
     fprintf(outputSamFile, "%s\t4\t*\t0\t0\t*\t*\t0\t0\t%s\t%s\tNH:i:%lu\tNM:i:%u\n", qname, forwardSeq, forwardQual, nHits, nErrors);
+    return;
+  }
+  if ((nHits == 1) && (nErrors == 0)) {
+    pos = bwa_sa2pos(bns, bwt, theseStates[0].k, depth, &strand);
+    rid = bns_pos2rid(bns, pos);
+    pos = pos - bns->anns[rid].offset + 1;
+    printReadUniqueNoError(strand, bns->anns[rid].name, pos, readLength, forwardSeq, quality, counts, outputSamFile);
     return;
   }
   if (nErrors == 0) {
@@ -856,13 +898,13 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
       backwardCigar[backwardCigarSize] = 0;
     }
     for (bwtint_t j = state->k; j <= state->l; ++j) {
-      flag = (hitId == 0)? 0: 0x100;
+      flag = (hitId == 0)? 0: CIGAR_SECONDARY_HIT;
       ++hitId;
-      pos = bwa_sa2pos(bns, bwt, j, path->depth, &strand);
+      pos = bwa_sa2pos(bns, bwt, j, depth, &strand);
       rid = bns_pos2rid(bns, pos);
       pos = pos - bns->anns[rid].offset + 1;
       if (strand == 0) {
-        flag |= 0x10;
+        flag |= CIGAR_REVERSE;
         if (backwardSeq  == NULL) backwardSeq  = reverseComplementSequence(forwardSeq, readLength);
         if (backwardQual == NULL) backwardQual = reverseSequence(forwardQual, readLength);
         seq  = backwardSeq;
@@ -877,7 +919,7 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
       fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", qname, flag, bns->anns[rid].name, pos, mapq, cigar, seq, qual, nHits, hitId, nHits, nErrors);
     }
   }
-  if (backwardSeq) free(backwardSeq);
+  if (backwardSeq)  free(backwardSeq);
   if (backwardQual) free(backwardQual);
 }
 
@@ -978,6 +1020,60 @@ bool addError (states_t *states, path_t *path) {
   return true;
 }
 
+bool tryShortCut (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFile) {
+  int is_rev, rid;
+  bwtint_t pos;
+  uint64_t cellId = path->cellIds[path->depth];
+  unsigned short nextNucleotide;
+  cell_t *cell = &tree->cells[cellId];
+  bool lastNucleotide;
+  state_t state;
+  state_t *previousState, *nextState = &state;
+  //printf("Trying short cut.  Min errors: %zu, # states: %zu, depth: %zu\n", states->minErrors[path->depth], states->nStates[path->depth][0], path->depth);
+  if ((states->minErrors[path->depth] != 0) || (states->nStates[path->depth][0] != 1) || (states->states[path->depth][0][0].k != states->states[path->depth][0][0].l)) {
+    return false;
+  }
+  //printf("  k: %" PRIu64", l: %" PRIu64 "\n", states->states[path->depth][0][0].k, states->states[path->depth][0][0].l);
+  //printPath(path);
+  pos = bwt_sa(bwt, states->states[path->depth][0][0].k);
+  pos = bns_depos(bns, pos, &is_rev);
+  rid = bns_pos2rid(bns, pos);
+  //printf("  Step 1 ok, base nt is '%c'\n", DNA5_TO_CHAR_REV[is_rev][_get_pac(pac, pos)]);
+  do {
+    //printf("  Depth %zu\n", path->depth);
+    pos = (is_rev)? pos+1: pos-1;
+    nextNucleotide = DNA5_TO_INT_REV[is_rev][_get_pac(pac, pos)];
+    //printf("  Next nucleotide: %c\n", DNA5_TO_CHAR[nextNucleotide]);
+    cellId = cell->children[nextNucleotide];
+    lastNucleotide = (cellId == NO_DATA);
+    for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
+      if ((nucleotide != nextNucleotide) && (cell->children[nucleotide] != NO_DATA)) {
+        //printf("    Other nucleotide: %i is used, exiting at depth %zu.\n", nucleotide, path->depth);
+        return false;
+      }
+    }
+    if (! lastNucleotide) {
+      previousState = &states->states[path->depth][0][0];
+      //printf("      Adding nucleotide '%c' at depth %zu\n", DNA5_TO_CHAR[(int) nextNucleotide], path->depth + 1);
+      goDownBwt(previousState, nextNucleotide, nextState);
+      path->nucleotides[path->depth] = nextNucleotide;
+      ++path->depth;
+      --path->readPos;
+      addState(states, path->depth, 0, nextState, MATCH, previousState);
+      path->read[path->readPos] = DNA5_TO_CHAR[nextNucleotide];
+      path->cellIds[path->depth] = cellId;
+      cell = &tree->cells[cellId];
+    }
+    if (cell->quality) {
+      //printf("    Printing read @ depth %zu\n", path->depth);
+      printReadUniqueNoError(is_rev? 0: 1, bns->anns[rid].name, pos, path->depth, path->read + path->readPos, cell->quality, cell->counts, outputSamFile);
+    }
+  }
+  while (! lastNucleotide);
+  //printf("Short seems to work\n");
+  return true;
+}
+
 bool findBestMapping (states_t *states, path_t *path) {
   //printf("  Finding best mapping\n");
   //printf("    Path is: ");
@@ -1005,37 +1101,17 @@ void _map (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFi
       return;
     }
     mappable = findBestMapping(states, path);
-    if ((mappable) && (tree->cells[path->cellIds[path->depth]].quality)) {
-      printRead(states, path, tree->cells[path->cellIds[path->depth]].quality, tree->cells[path->cellIds[path->depth]].counts, outputSamFile);
-    }
-  }
-  /*
-  assert(path->depth > 0);
-  while (true) {
-    //printf("Starting 'map' at height %zu with read '%s' (min errors: %zu)\n", path->depth, path->read+path->readPos, states->minErrors[path->depth-1]);
-    if (mapOneNucleotide(bwt, states, path->nucleotides[path->depth-1], path->depth-1)) {
-      //printf("\tquality is %p\n", tree->cells[path->cellIds[path->depth]].quality);
+    if (mappable) {
       if (tree->cells[path->cellIds[path->depth]].quality) {
-        printRead(bwt, bns, states->nStates[path->depth][states->minErrors[path->depth]], states->states[path->depth][states->minErrors[path->depth]], path);
+        printRead(states, path, tree->cells[path->cellIds[path->depth]].quality, tree->cells[path->cellIds[path->depth]].counts, outputSamFile);
       }
-      //printf("\tGoing to next nt (depth is %zu)\n", path->depth);
-      if (! goDownTree(tree, path)) {
-        //printf("\tThen to next read (depth is %zu)\n", path->depth);
-        if (! goRightTree(tree, path)) {
-          return;
-        }
+      if (path->depth > DEPTH_SHORT_CUT) {
+        tryShortCut(tree, states, path, outputSamFile);
       }
     }
-    else {
-      //printf("\tGoing to next read\n");
-      if (! goRightTree(tree, path)) {
-        return;
-      }
-    }
-    backtrackStates(states, path->depth);
   }
-  */
 }
+
 FILE *printSamHeader() {
   FILE *outputSamFile = fopen(parameters->outputSamFileName, "w");
   if (outputSamFile == NULL) {
@@ -1063,6 +1139,7 @@ int main(int argc, char const ** argv) {
   parameters_t param;
   tree_t tree;
   bwaidx_t *idx = NULL;
+  nReads = 0;
   parameters = &param;
   returnCode = parseCommandLine(argc, argv);
   if (returnCode != EXIT_SUCCESS) return returnCode;
