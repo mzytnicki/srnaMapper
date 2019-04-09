@@ -45,7 +45,7 @@
 #include "Libs/bwa/bwa.h"
 #include "Libs/bwa/bwase.h"
 
-#define DEPTH_SHORT_CUT 11
+#define DEPTH_SHORT_CUT 60
 
 #define _get_pac(pac, l) ((pac)[(l)>>2]>>((~(l)&3)<<1)&3)
 
@@ -58,7 +58,6 @@
 #define N_TRIPLETS      64
 #define TRIPLET_MASK    15
 
-#define MAX_HITS        20
 #define N_STATES        0x10000
 #define N_STATES_STORED 0x100000
 
@@ -68,8 +67,8 @@
 
 #define MATCH          0
 #define MISMATCH       4
-#define INSERTION      5
-#define DELETION       6
+#define INSERTION      8
+#define DELETION       12
 
 #define CIGAR_SECONDARY_HIT 0x100
 #define CIGAR_REVERSE 0x10
@@ -77,7 +76,7 @@
 typedef unsigned long count_t;
 
 const char DNA5_TO_CHAR [5] = { 'A', 'C', 'G', 'T', 'N' };
-const unsigned char DNA5_TO_INT_REV [2][5] = { { 0, 1, 2, 3, 4 }, { 0, 1, 2, 3, 4 }};
+const unsigned char DNA5_TO_INT_REV [2][5] = { { 0, 1, 2, 3, 4 }, { 3, 2, 1, 0, 4 }};
 const char DNA5_TO_CHAR_REV [2][5] = {"ACGTN", "TGCAN"};
 
 const int  CHAR_TO_DNA5 [127] = {
@@ -118,6 +117,8 @@ uint8_t *pac;
 bntseq_t *bns;
 unsigned long nReads;
 
+unsigned long int nShortCuts;
+unsigned long int nShortCutSuccesses;
 
 void trimSequence (size_t l, char *s) {
   s[l-1] = 0;
@@ -150,12 +151,13 @@ typedef struct {
     unsigned int nReadsFiles;
     size_t       maxNErrors;
     unsigned int lowComplexityThreshold;
+    unsigned int maxNHits;
 } parameters_t;
 
 parameters_t *parameters;
 
 void printUsage () {
-  puts("srnaCollapser [-h] -r reads -g genome -o filename [-c filename] [-f filter] [-e #errors]");
+  puts("srnaCollapser [-h] -r reads -g genome -o filename [-c filename] [-f filter] [-e #errors] [-n #max_hits]");
 }
 
 int parseCommandLine (int argc, char const **argv) {
@@ -165,6 +167,7 @@ int parseCommandLine (int argc, char const **argv) {
   parameters->nReadsFiles            = 0;
   parameters->maxNErrors             = 2;
   parameters->lowComplexityThreshold = 6;
+  parameters->maxNHits               = 5;
   for (int i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "-h") == 0) {
       printUsage();
@@ -194,6 +197,10 @@ int parseCommandLine (int argc, char const **argv) {
     else if (strcmp(argv[i], "-e") == 0) {
       ++i;
       parameters->maxNErrors = strtol(argv[i], &endptr, 10);
+    }
+    else if (strcmp(argv[i], "-n") == 0) {
+      ++i;
+      parameters->maxNHits = strtol(argv[i], &endptr, 10);
     }
     else {
       printf("Cannot understand parameter '%s'\n", argv[i]);
@@ -473,7 +480,7 @@ void printState(state_t *state, size_t maxDepth) {
     tmpSeq2[i] = tmpSeq1[s-i-1];
   }
   tmpSeq2[s] = 0;
-  printf("\t\t\t\t%" PRIu64 "-%" PRIu64 ": %s (%i/%i -> %p)\n", state->k, state->l, tmpSeq2, state->trace >> 2, state->trace & 3, state->previousState);
+  printf("\t\t\t\t%" PRIu64 "-%" PRIu64 ": %s (%c/%c -> %p)\n", state->k, state->l, tmpSeq2, CIGAR[state->trace >> 2], "ACGT"[state->trace & 3], state->previousState);
 }
 
 bool goDownBwt (state_t *previousState, unsigned short nucleotide, state_t *newState) {
@@ -652,12 +659,55 @@ void freeStates(states_t *states) {
 }
 
 typedef struct {
+  bool         isSet;
+  size_t       depth;
+  int          isRev;
+  int          rid;
+  unsigned int nMisses;
+  bwtint_t     pos;
+} shortCut_t;
+
+void initializeShortCut (shortCut_t *shortCut) {
+  shortCut->depth   = DEPTH_SHORT_CUT;
+  shortCut->isSet   = false;
+  shortCut->nMisses = 0;
+}
+
+void unsetShortCut (shortCut_t *shortCut) {
+  initializeShortCut(shortCut);
+}
+
+void setShortCut (shortCut_t *shortCut, bwtint_t k, size_t depth) {
+  shortCut->isSet = true;
+  shortCut->depth = depth;
+  shortCut->pos   = bwt_sa(bwt, k);
+  shortCut->pos   = bns_depos(bns, shortCut->pos, &shortCut->isRev);
+  shortCut->rid   = bns_pos2rid(bns, shortCut->pos);
+}
+
+void resetShortCut (shortCut_t *shortCut, size_t depth) {
+  shortCut->pos = (shortCut->isRev)? shortCut->pos+(depth-shortCut->depth): shortCut->pos-(depth-shortCut->depth);
+  shortCut->depth = depth;
+}
+
+void incShortCut (shortCut_t *shortCut) {
+  shortCut->pos = (shortCut->isRev)? shortCut->pos+1: shortCut->pos-1;
+  ++shortCut->depth;
+}
+
+void addMiss (shortCut_t *shortCut) {
+  shortCut->depth += shortCut->nMisses;
+  ++shortCut->nMisses;
+}
+
+typedef struct {
   unsigned short *nucleotides;
   uint64_t       *cellIds;
   size_t          maxDepth;
   size_t          depth;
   char           *read;
   size_t          readPos;
+  shortCut_t     *shortCut;
 } path_t;
 
 void printPath (path_t *path) {
@@ -679,6 +729,7 @@ void initializePath (path_t *path, size_t maxDepth) {
   path->cellIds[0]     = 0;
   path->read[maxDepth] = 0;
   path->readPos        = maxDepth;
+  initializeShortCut(path->shortCut);
 }
 
 void freePath (path_t *path) {
@@ -708,6 +759,7 @@ bool goDownTree (const tree_t *tree, path_t *path) {
 bool goRightTree (const tree_t *tree, path_t *path) {
   uint64_t cellId;
   cell_t *cell;
+  unsetShortCut(path->shortCut);
   //printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
   while (path->depth > 0) {
     --path->depth;
@@ -850,7 +902,7 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   for (size_t i = 0; i < nStates; ++i) {
     nHits += theseStates[i].l - theseStates[i].k + 1;
   }
-  if (nHits > MAX_HITS) {
+  if (nHits > parameters->maxNHits) {
     fprintf(outputSamFile, "%s\t4\t*\t0\t0\t*\t*\t0\t0\t%s\t%s\tNH:i:%lu\tNM:i:%u\n", qname, forwardSeq, forwardQual, nHits, nErrors);
     return;
   }
@@ -871,12 +923,14 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   else {
     mapq = 40 - nErrors;
   }
+  //printf("Read: %s, read length: %zu\n", forwardSeq, readLength);
   for (size_t stateId = 0; stateId < nStates; ++stateId) {
     state = &theseStates[stateId];
     if (nErrors != 0) {
       currentState = state;
       backtraceSize = 0;
-      while (currentState != NULL) {
+      while (currentState->previousState != NULL) {
+        //printState(currentState, path->maxDepth);
         char cigar = CIGAR[currentState->trace >> 2];
         if ((backtraceSize == 0) || (backtraceCigar[backtraceSize-1] != cigar)) {
           backtraceCigar[backtraceSize] = cigar;
@@ -1020,57 +1074,57 @@ bool addError (states_t *states, path_t *path) {
   return true;
 }
 
+bool shortCutCondition (const states_t *states, const path_t *path) {
+  return ((path->depth >= path->shortCut->depth) && (states->minErrors[path->depth] == 0) && (states->nStates[path->depth][0] == 1) && (states->states[path->depth][0][0].k == states->states[path->depth][0][0].l));
+}
+
 bool tryShortCut (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFile) {
-  int is_rev, rid;
-  bwtint_t pos;
-  uint64_t cellId = path->cellIds[path->depth];
+  shortCut_t *shortCut = path->shortCut;
+  size_t depth = path->depth;
+  uint64_t cellId = path->cellIds[depth];
   unsigned short nextNucleotide;
   cell_t *cell = &tree->cells[cellId];
   bool lastNucleotide;
-  state_t state;
-  state_t *previousState, *nextState = &state;
-  //printf("Trying short cut.  Min errors: %zu, # states: %zu, depth: %zu\n", states->minErrors[path->depth], states->nStates[path->depth][0], path->depth);
-  if ((states->minErrors[path->depth] != 0) || (states->nStates[path->depth][0] != 1) || (states->states[path->depth][0][0].k != states->states[path->depth][0][0].l)) {
-    return false;
-  }
+  size_t readPos = path->readPos;
+  //printf("Trying short cut.  Min errors: %zu, # states: %zu, depth: %zu\n", states->minErrors[depth], states->nStates[depth][0], depth);
   //printf("  k: %" PRIu64", l: %" PRIu64 "\n", states->states[path->depth][0][0].k, states->states[path->depth][0][0].l);
   //printPath(path);
-  pos = bwt_sa(bwt, states->states[path->depth][0][0].k);
-  pos = bns_depos(bns, pos, &is_rev);
-  rid = bns_pos2rid(bns, pos);
+  if (! shortCut->isSet) {
+    setShortCut(shortCut, states->states[depth][0][0].k, depth);
+  }
+  else {
+    resetShortCut(shortCut, depth);
+  }
   //printf("  Step 1 ok, base nt is '%c'\n", DNA5_TO_CHAR_REV[is_rev][_get_pac(pac, pos)]);
-  do {
+  ++nShortCuts;
+  while (true) {
     //printf("  Depth %zu\n", path->depth);
-    pos = (is_rev)? pos+1: pos-1;
-    nextNucleotide = DNA5_TO_INT_REV[is_rev][_get_pac(pac, pos)];
+    incShortCut(shortCut);
+    nextNucleotide = DNA5_TO_INT_REV[shortCut->isRev][_get_pac(pac, shortCut->pos)];
     //printf("  Next nucleotide: %c\n", DNA5_TO_CHAR[nextNucleotide]);
     cellId = cell->children[nextNucleotide];
     lastNucleotide = (cellId == NO_DATA);
     for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
       if ((nucleotide != nextNucleotide) && (cell->children[nucleotide] != NO_DATA)) {
-        //printf("    Other nucleotide: %i is used, exiting at depth %zu.\n", nucleotide, path->depth);
-        return false;
+        //printf("    Other nucleotide: %i is used, exiting at depth %zu/%zu.\n", nucleotide, path->depth, shortCut->depth);
+        addMiss(shortCut);
+        return true;
       }
     }
-    if (! lastNucleotide) {
-      previousState = &states->states[path->depth][0][0];
-      //printf("      Adding nucleotide '%c' at depth %zu\n", DNA5_TO_CHAR[(int) nextNucleotide], path->depth + 1);
-      goDownBwt(previousState, nextNucleotide, nextState);
-      path->nucleotides[path->depth] = nextNucleotide;
-      ++path->depth;
-      --path->readPos;
-      addState(states, path->depth, 0, nextState, MATCH, previousState);
-      path->read[path->readPos] = DNA5_TO_CHAR[nextNucleotide];
-      path->cellIds[path->depth] = cellId;
-      cell = &tree->cells[cellId];
+    if (lastNucleotide) {
+      //printf("    Last nucleotide @ depth %zu/%zu, exiting.\n", path->depth, shortCut->depth);
+      ++nShortCutSuccesses;
+      return (goRightTree(tree, path));
     }
+    --readPos;
+    path->read[readPos] = DNA5_TO_CHAR[nextNucleotide];
+    cell = &tree->cells[cellId];
     if (cell->quality) {
       //printf("    Printing read @ depth %zu\n", path->depth);
-      printReadUniqueNoError(is_rev? 0: 1, bns->anns[rid].name, pos, path->depth, path->read + path->readPos, cell->quality, cell->counts, outputSamFile);
+      printReadUniqueNoError(shortCut->isRev? 0: 1, bns->anns[shortCut->rid].name, shortCut->pos, shortCut->depth, path->read + readPos, cell->quality, cell->counts, outputSamFile);
     }
   }
-  while (! lastNucleotide);
-  //printf("Short seems to work\n");
+  assert(false);
   return true;
 }
 
@@ -1105,8 +1159,11 @@ void _map (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFi
       if (tree->cells[path->cellIds[path->depth]].quality) {
         printRead(states, path, tree->cells[path->cellIds[path->depth]].quality, tree->cells[path->cellIds[path->depth]].counts, outputSamFile);
       }
-      if (path->depth > DEPTH_SHORT_CUT) {
-        tryShortCut(tree, states, path, outputSamFile);
+      if (shortCutCondition(states, path)) {
+        if (! tryShortCut(tree, states, path, outputSamFile)) {
+          //printf("Short cut with negative exit\n");
+          return;
+        }
       }
     }
   }
@@ -1117,15 +1174,18 @@ FILE *printSamHeader() {
   if (outputSamFile == NULL) {
     return NULL;
   }
+  fprintf(outputSamFile, "@HD\tVN:1.6\tSO:unsorted\n");
   for (int i = 0; i < bns->n_seqs; ++i) {
-    fprintf(outputSamFile, "@HD VN:1.6 SO:unsorted\n@SQ\tSN:%s\tLN:%d\n", bns->anns[i].name, bns->anns[i].len);
+    fprintf(outputSamFile, "@SQ\tSN:%s\tLN:%d\n", bns->anns[i].name, bns->anns[i].len);
   }
   return outputSamFile;
 }
 
 void map (const tree_t *tree, FILE *outputSamFile) {
-  states_t states;
-  path_t   path;
+  states_t   states;
+  path_t     path;
+  shortCut_t shortCut;
+  path.shortCut = &shortCut;
   initializeStates(&states, tree->depth);
   initializePath(&path, tree->depth);
   //addState(&states, 0, 0, firstState);
@@ -1171,7 +1231,9 @@ int main(int argc, char const ** argv) {
   if (outputSamFile == NULL) {
     printf("Error!  Cannot write to output SAM file '%s'.\nExiting.\n", param.outputSamFileName);
   }
+  nShortCuts = nShortCutSuccesses = 0;
   map(&tree, outputSamFile);
+  printf("Short cut succeeded %lu/%lu\n", nShortCutSuccesses, nShortCuts);
   freeTree(&tree);
   bwa_idx_destroy(idx);
   puts("... done.");
