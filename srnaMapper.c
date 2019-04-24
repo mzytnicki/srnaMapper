@@ -60,10 +60,9 @@
 #define N_TRIPLETS      64
 #define TRIPLET_MASK    15
 
-#define N_STATES        0x10000
-#define N_STATES_STORED 0x100000
+#define N_STATES        0x5000
 
-#define PREPROCESSED_DEPTH 12
+#define PREPROCESSED_DEPTH 1
 
 #define INIT_N_CELLS 0x1000000
 
@@ -152,6 +151,7 @@ typedef struct {
   unsigned long int nShortCutSuccesses;
   unsigned long int nDown;
   unsigned long int nDownPreprocessed;
+  size_t            maxNStates;
 } stats_t;
 
 stats_t *stats;
@@ -161,6 +161,7 @@ void initializeStats () {
   stats->nShortCutSuccesses = 0;
   stats->nDown              = 0;
   stats->nDownPreprocessed  = 0;
+  stats->maxNStates         = 0;
 }
 
 void printStats () {
@@ -169,6 +170,7 @@ void printStats () {
   setlocale(LC_NUMERIC, "");
   printf("Short cut succeeded %'lu/%'lu\n", stats->nShortCutSuccesses, stats->nShortCuts);
   printf("# BWT preprocessed %'lu/%'lu\n", stats->nDownPreprocessed, stats->nDown);
+  printf("# max states %'zu/%'i\n", stats->maxNStates, N_STATES);
   setlocale(LC_ALL, savedLocale);
 }
 
@@ -401,9 +403,21 @@ int readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
   inFile = fopen(fileName, "r");
   if (inFile == NULL) return EXIT_FAILURE;
   while ((nRead = getline(&line, &len, inFile)) != -1) {
-    getline(&sequence, &len, inFile);
-    getline(&line, &len, inFile);
+    nRead = getline(&sequence, &len, inFile);
+    if (nRead == -1) {
+      fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
+      return EXIT_FAILURE;
+    }
+    nRead = getline(&line, &len, inFile);
+    if (nRead == -1) {
+      fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
+      return EXIT_FAILURE;
+    }
     nRead = getline(&quality, &len, inFile);
+    if (nRead == -1) {
+      fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
+      return EXIT_FAILURE;
+    }
     assert(strlen(sequence) == strlen(quality));
     assert(strlen(sequence) == (unsigned long) nRead);
     trimSequence(nRead, sequence);
@@ -668,7 +682,7 @@ size_t simplifyStates (state_t *states, size_t nStates) {
 bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state) {
   //printf("\t\t\tAdding one state (%" PRIu64 ", %" PRIu64 ") at (depth = %zu, # errors = %zu), %zu/%d occupied\n", state->k, state->l, depth, nErrors, states->nStates[depth][nErrors], N_STATES);
   //printState(state, states->treeSize);
-  if (states->nStates[depth][nErrors] == N_STATES_STORED-1) {
+  if (states->nStates[depth][nErrors] == N_STATES-1) {
     //printf("Exiting because # states = %zu >= %i at depth %zu with %zu errors, before simplification.\n", states->nStates[depth][nErrors], N_STATES, depth, nErrors);
     //printStates(states, depth);
     states->nStates[depth][nErrors] = N_STATES;
@@ -677,6 +691,7 @@ bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state) {
   states->states[depth][nErrors][states->nStates[depth][nErrors]] = *state;
   ++states->nStates[depth][nErrors];
   ++states->nStatesPerPosition[depth];
+  stats->maxNStates = MAX(stats->maxNStates, states->nStates[depth][nErrors]);
   if (states->minErrors[depth] == SIZE_MAX) {
     states->minErrors[depth] = nErrors;
     states->maxErrors[depth] = nErrors;
@@ -706,7 +721,7 @@ states_t *initializeStates(size_t treeSize) {
     states->minErrors[depth] = SIZE_MAX;
     states->maxErrors[depth] = SIZE_MAX;
     for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
-      states->states[depth][nErrors] = (state_t *) malloc(N_STATES_STORED * sizeof(states_t));
+      states->states[depth][nErrors] = (state_t *) malloc(N_STATES * sizeof(states_t));
     }
   }
   preprocessedIntervals_t *preprocessedIntervals = initializePreprocessedStates();

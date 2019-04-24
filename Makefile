@@ -1,9 +1,10 @@
 ifdef DEBUG
 	OFLAGS=-O0 -g
 else ifdef PROF
-	OFLAGS=-O2 -pg
+	OFLAGS=-O3 -pg
 else
-	OFLAGS=-O3 -DNDEBUG -march=native -g
+	OFLAGS=-O3 -DNDEBUG -march=native
+	#OFLAGS=-O3 -DNDEBUG -march=native -fprofile-use -g
 endif
 CPPC=clang++
 CC=gcc
