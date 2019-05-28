@@ -46,7 +46,7 @@
 #include "Libs/bwa/bwa.h"
 #include "Libs/bwa/bwase.h"
 
-#define DEPTH_SHORT_CUT 200
+#define DEPTH_SHORT_CUT 21
 
 #define _get_pac(pac, l) ((pac)[(l)>>2]>>((~(l)&3)<<1)&3)
 
@@ -62,7 +62,7 @@
 
 #define N_STATES        0x5000
 
-#define PREPROCESSED_DEPTH 1
+#define PREPROCESSED_DEPTH 15
 
 #define INIT_N_CELLS 0x1000000
 
@@ -485,17 +485,18 @@ typedef struct preprocessedInterval_t preprocessedInterval_t;
 
 struct preprocessedInterval_t {
   bwtinterval_t interval;
-  preprocessedInterval_t *firstChild;
 };
 
 typedef struct {
   preprocessedInterval_t *intervals;
+  size_t nIntervals;
 } preprocessedIntervals_t;
 
 preprocessedIntervals_t *initializePreprocessedStates () {
   preprocessedIntervals_t *preprocessedIntervals = malloc(sizeof(preprocessedIntervals_t));
-  //printf("#intervals: %lu\n", (unsigned long) (4 * powl(N_NUCLEOTIDES, PREPROCESSED_DEPTH+1) - 1) / (N_NUCLEOTIDES - 1));
-  preprocessedIntervals->intervals = (preprocessedInterval_t *) malloc((N_NUCLEOTIDES * (powl(N_NUCLEOTIDES, PREPROCESSED_DEPTH+1) - 1) / (N_NUCLEOTIDES - 1) + 1) * sizeof(preprocessedInterval_t));
+  preprocessedIntervals->nIntervals = (powl(N_NUCLEOTIDES, PREPROCESSED_DEPTH+1) - 1) / (N_NUCLEOTIDES - 1);
+  //printf("#intervals: %zu\n", preprocessedIntervals->nIntervals);
+  preprocessedIntervals->intervals = (preprocessedInterval_t *) malloc(preprocessedIntervals->nIntervals * sizeof(preprocessedInterval_t));
   return preprocessedIntervals;
 }
 
@@ -505,43 +506,28 @@ void freePreprocessedStates (preprocessedIntervals_t *preprocessedIntervals) {
 
 //static unsigned long nIntervals;
 
-preprocessedInterval_t *_populatePreprocessedIntervals (preprocessedIntervals_t *preprocessedIntervals, size_t depth, unsigned int code, preprocessedInterval_t *preprocessedInterval, preprocessedInterval_t *preprocessedFreeState, bwtint_t newK [N_NUCLEOTIDES], bwtint_t newL [N_NUCLEOTIDES]) {
-  preprocessedInterval_t *newState = preprocessedFreeState;
-  preprocessedInterval->firstChild = preprocessedFreeState;
-  //bwt_2occ4(bwt, preprocessedInterval->interval.k, preprocessedInterval->interval.l, newK, newL);
-  //printf("From %" PRIu64 "-%" PRIu64 " @ depth %zu, code %u...\n", preprocessedInterval->interval.k, preprocessedInterval->interval.l, depth, code);
+void _populatePreprocessedIntervals (preprocessedIntervals_t *preprocessedIntervals, size_t depth, size_t id) {
+  size_t nextId = id * N_NUCLEOTIDES + 1;
+  ++depth;
   for (unsigned int nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-    //++nIntervals;
-    bwt_2occ(bwt, preprocessedInterval->interval.k, preprocessedInterval->interval.l, nucleotide, &preprocessedFreeState->interval.k, &preprocessedFreeState->interval.l);
-    preprocessedFreeState->interval.k = bwt->L2[nucleotide] + preprocessedFreeState->interval.k + 1;
-    preprocessedFreeState->interval.l = bwt->L2[nucleotide] + preprocessedFreeState->interval.l;
-    //preprocessedFreeState->interval.k = newK[nucleotide];
-    //preprocessedFreeState->interval.l = newL[nucleotide];
-    //printf("  %c: %" PRIu64 "-%" PRIu64 "...\n", "ACGT"[nucleotide], preprocessedFreeState->interval.k, preprocessedFreeState->interval.l);
-    preprocessedFreeState->firstChild = NULL;
-    ++preprocessedFreeState;
-  }
-  if (depth < PREPROCESSED_DEPTH) {
-    code <<= NUCLEOTIDES_BITS;
-    ++depth;
-    for (unsigned int nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-      if (newState->interval.k <= newState->interval.l) {
-        preprocessedFreeState = _populatePreprocessedIntervals(preprocessedIntervals, depth, code | nucleotide, newState, preprocessedFreeState, newK, newL);
-      }
-      ++newState;
+    bwt_2occ(bwt, preprocessedIntervals->intervals[id].interval.k, preprocessedIntervals->intervals[id].interval.l, nucleotide, &preprocessedIntervals->intervals[nextId].interval.k, &preprocessedIntervals->intervals[nextId].interval.l);
+    preprocessedIntervals->intervals[nextId].interval.k = bwt->L2[nucleotide] + preprocessedIntervals->intervals[nextId].interval.k + 1;
+    preprocessedIntervals->intervals[nextId].interval.l = bwt->L2[nucleotide] + preprocessedIntervals->intervals[nextId].interval.l;
+    if ((preprocessedIntervals->intervals[nextId].interval.k <= preprocessedIntervals->intervals[nextId].interval.l) && (depth < PREPROCESSED_DEPTH)) {
+      _populatePreprocessedIntervals(preprocessedIntervals, depth, nextId);
+      //printf("id: %zu\n", nextId);
     }
+    ++nextId;
+    //printf("  %c: %" PRIu64 "-%" PRIu64 "...\n", "ACGT"[nucleotide], preprocessedFreeState->interval.k, preprocessedFreeState->interval.l);
   }
-  return preprocessedFreeState;
 }
 
 void populatePreprocessedIntervals (preprocessedIntervals_t *preprocessedIntervals) {
   //nIntervals = 0;
-  puts("Pre-processing intervals...");
-  bwtint_t newK [N_NUCLEOTIDES];
-  bwtint_t newL [N_NUCLEOTIDES];
+  printf("Pre-processing %zu intervals...\n", preprocessedIntervals->nIntervals);
   preprocessedIntervals->intervals[0].interval.k = 0;
   preprocessedIntervals->intervals[0].interval.l = bwt->bwt_size;
-  _populatePreprocessedIntervals(preprocessedIntervals, 0, 0, &preprocessedIntervals->intervals[0], &preprocessedIntervals->intervals[1], newK, newL);
+  _populatePreprocessedIntervals(preprocessedIntervals, 0, 0);
   //printf("#intervals used: %lu\n", nIntervals);
   puts("... done.");
 }
@@ -603,25 +589,6 @@ void printState(state_t *state, size_t maxDepth) {
   printf("\t\t\t\t%" PRIu64 "-%" PRIu64 ": %s (%c/%c -> %p)\n", getStateInterval(state)->k, getStateInterval(state)->l, tmpSeq2, CIGAR[(state->trace >> BACKTRACE_OFFSET) & BACKTRACE_MASK], "ACGT"[state->trace & NUCLEOTIDE_MASK], state->previousState);
 }
 
-inline bool goDownBwt (state_t *previousState, unsigned short nucleotide, state_t *newState) {
-  ++stats->nDown;
-  //printf("    Going down BWT from range %" PRId64 "-%" PRIu64 " and nt %hu, preprocessed: %s\n", getStateInterval(previousState)->k, getStateInterval(previousState)->l, nucleotide, (previousState->trace & PREPROCESSED)? "true": "false");
-  if ((previousState->trace & PREPROCESSED) && (previousState->preprocessedInterval->firstChild != NULL)) {
-    ++stats->nDownPreprocessed;
-    //printf("      first case\n");
-    newState->preprocessedInterval = previousState->preprocessedInterval->firstChild + nucleotide;
-    newState->trace                = PREPROCESSED;
-    //if (newState->preprocessedInterval->interval.k <= newState->preprocessedInterval->interval.l) printf("      ok!\n");
-    return (newState->preprocessedInterval->interval.k <= newState->preprocessedInterval->interval.l);
-  }
-  bwt_2occ(bwt, getStateInterval(previousState)->k-1, getStateInterval(previousState)->l, nucleotide, &newState->interval.k, &newState->interval.l);
-  newState->interval.k = bwt->L2[nucleotide] + newState->interval.k + 1;
-  newState->interval.l = bwt->L2[nucleotide] + newState->interval.l;
-  //if (newState->interval.k <= newState->interval.l) printf("      ok!\n");
-  newState->trace = 0;
-  return (newState->interval.k <= newState->interval.l);
-}
-
 typedef struct {
   state_t ***states;
   size_t **nStates;
@@ -631,6 +598,30 @@ typedef struct {
   size_t treeSize;
   preprocessedIntervals_t *preprocessedIntervals;
 } states_t;
+
+bool goDownBwt (const states_t *states, state_t *previousState, unsigned short nucleotide, state_t *newState) {
+  ++stats->nDown;
+  //printf("    Going down BWT from range %" PRId64 "-%" PRIu64 " and nt %hu, preprocessed: %s\n", getStateInterval(previousState)->k, getStateInterval(previousState)->l, nucleotide, (previousState->trace & PREPROCESSED)? "true": "false");
+  if (previousState->trace & PREPROCESSED) {
+    size_t nextId = (previousState->preprocessedInterval - states->preprocessedIntervals->intervals) * N_NUCLEOTIDES + nucleotide + 1;
+    //printf("      preprocessed next id should be %zu -> %zu (%" PRIu64 "-%" PRIu64 ")\n", previousState->preprocessedInterval - states->preprocessedIntervals->intervals, nextId, states->preprocessedIntervals->intervals[nextId].interval.k, states->preprocessedIntervals->intervals[nextId].interval.l);
+    if (nextId < states->preprocessedIntervals->nIntervals) {
+      //printf("      ok\n");
+      ++stats->nDownPreprocessed;
+      //printf("      first case\n");
+      newState->preprocessedInterval = &states->preprocessedIntervals->intervals[nextId];
+      newState->trace                = PREPROCESSED;
+      //if (newState->preprocessedInterval->interval.k <= newState->preprocessedInterval->interval.l) printf("      ok!\n");
+      return (newState->preprocessedInterval->interval.k <= newState->preprocessedInterval->interval.l);
+    }
+  }
+  bwt_2occ(bwt, getStateInterval(previousState)->k-1, getStateInterval(previousState)->l, nucleotide, &newState->interval.k, &newState->interval.l);
+  newState->interval.k = bwt->L2[nucleotide] + newState->interval.k + 1;
+  newState->interval.l = bwt->L2[nucleotide] + newState->interval.l;
+  //if (newState->interval.k <= newState->interval.l) printf("      ok!\n");
+  newState->trace = 0;
+  return (newState->interval.k <= newState->interval.l);
+}
 
 void printStates (states_t *states, size_t depth) {
   for (size_t i = 0; i <= depth; ++i) {
@@ -1056,7 +1047,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   //printf("    Mapping %hu without error at depth %zu with %zu errors and %zu states\n", nt, depth, nErrors, states->nStates[depth-1][nErrors]);
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
     previousState = &states->states[depth-1][nErrors][stateId];
-    if (goDownBwt(previousState, nt, &nextState)) {
+    if (goDownBwt(states, previousState, nt, &nextState)) {
       mapFound = true;
       nextState.trace        |= MATCH;
       nextState.previousState = previousState;
@@ -1091,7 +1082,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
       return false;
     }
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-      if (goDownBwt(&state, nt, newState)) {
+      if (goDownBwt(states, &state, nt, newState)) {
         //addState(states, depth-1, nErrors, &newState);
         if (nt != path->nucleotides[depth-1]) {
           //printState(newState, path->maxDepth);
@@ -1108,7 +1099,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
   for (size_t stateId = 0; stateId < states->nStates[depth][nErrors-1]; ++stateId) {
     state_t *state = &states->states[depth][nErrors-1][stateId];
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-      if (goDownBwt(state, nt, newState)) {
+      if (goDownBwt(states, state, nt, newState)) {
         newState->trace        |= DELETION | nt;
         newState->previousState = state;
         if (! addState(states, depth, nErrors, newState)) {
