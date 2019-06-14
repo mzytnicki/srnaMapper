@@ -85,7 +85,7 @@ typedef unsigned long count_t;
 
 const char DNA5_TO_CHAR [5] = { 'A', 'C', 'G', 'T', 'N' };
 const unsigned char DNA5_TO_INT_REV [2][5] = { { 0, 1, 2, 3, 4 }, { 3, 2, 1, 0, 4 }};
-const char DNA5_TO_CHAR_REV [2][5] = {"ACGTN", "TGCAN"};
+const char *DNA5_TO_CHAR_REV[] = {"ACGTN", "TGCAN"};
 
 const int  CHAR_TO_DNA5 [127] = {
  4, 4, 4, 4, 4, 4, 4, 4, 4, 4, //   0
@@ -278,31 +278,38 @@ void freeCell (cell_t *cell) {
 
 typedef struct {
   char       **qualities;
-  uint64_t    *cellIds;
+  //uint64_t    *cellIds;
   unsigned int nQualities;
   unsigned int nAllocated;
 } quality_t;
 
 void createQualities (quality_t *qualities) {
   qualities->nAllocated = INIT_N_QUALITIES;
-  qualities->qualities  = (char **) malloc(qualities->nAllocated * sizeof(char *));
-  qualities->cellIds    = (uint64_t *) malloc(qualities->nAllocated * sizeof(uint64_t));
+  qualities->qualities  = (char **) calloc(qualities->nAllocated, sizeof(char *));
+  //qualities->qualities  = (char **) malloc(qualities->nAllocated * sizeof(char *));
+  //qualities->cellIds    = (uint64_t *) malloc(qualities->nAllocated * sizeof(uint64_t));
   qualities->nQualities = 0;
 }
 
 void freeQualities (quality_t *qualities) {
   for (unsigned int i = 0; i < qualities->nAllocated; ++i) {
-    free(qualities->qualities[i]);
+    if (qualities->qualities[i] != NULL) {
+      free(qualities->qualities[i]);
+    }
   }
   free(qualities->qualities);
-  free(qualities->cellIds);
+  //free(qualities->cellIds);
 }
 
 unsigned int findQualityId (const quality_t *qualities, uint64_t cellId) {
+  if (qualities->qualities[cellId] == NULL) return NO_QUALITY;
+  return cellId;
+  /*
   for (unsigned int i = 0; i < qualities->nQualities; ++i) {
     if (qualities->cellIds[i] == cellId) return i;
   }
   return NO_QUALITY;
+  */
 }
 
 char *findQuality (const quality_t *qualities, uint64_t cellId) {
@@ -312,6 +319,15 @@ char *findQuality (const quality_t *qualities, uint64_t cellId) {
 }
 
 void addQuality (quality_t *qualities, uint64_t cellId, size_t l, char *quality) {
+  while (cellId >= qualities->nAllocated) {
+    qualities->nAllocated *= 2;
+  }
+  if ((qualities->qualities = (char **) realloc(qualities->qualities, qualities->nAllocated * sizeof(char *))) == NULL) {
+    printf("Cannot allocate memory for qualities of size %u.\nExiting.\n", qualities->nAllocated);
+    exit(EXIT_FAILURE);
+  }
+  qualities->qualities[cellId] = strndup(quality, l);
+  /*
   ++qualities->nQualities;
   if (qualities->nQualities == qualities->nAllocated) {
     qualities->nAllocated *= 2;
@@ -326,6 +342,7 @@ void addQuality (quality_t *qualities, uint64_t cellId, size_t l, char *quality)
   }
   qualities->qualities[qualities->nQualities] = strndup(quality, l);
   qualities->cellIds[qualities->nQualities] = cellId;
+  */
 }
 
 void replaceQuality (quality_t *qualities, unsigned int qualityId, size_t l, char *quality) {
@@ -363,11 +380,15 @@ void createTree (tree_t *tree) {
   createQualities(&tree->qualities);
 }
 
-void _computeTreeStats (tree_t *tree, unsigned int **stats, unsigned int *statsSum, unsigned int *branchSizes, unsigned int branchSize, cell_t *cell, size_t depth) {
+void _computeTreeStats (const tree_t *tree, unsigned int **stats, unsigned int *statsSum, unsigned int *branchSizes, unsigned int branchSize, cell_t *cell, size_t depth, unsigned int *nNodes, unsigned int *nQualities) {
   unsigned int c = 0;
   for (short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
     if (cell->children[nucleotide] != NO_DATA) {
       ++c;
+      ++(*nNodes);
+      if (findQualityId(&tree->qualities, cell->children[nucleotide]) != NO_QUALITY) {
+        ++(*nQualities);
+      }
     }
   }
   if (c == 1) {
@@ -379,22 +400,24 @@ void _computeTreeStats (tree_t *tree, unsigned int **stats, unsigned int *statsS
   }
   for (short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
     if (cell->children[nucleotide] != NO_DATA) {
-      _computeTreeStats(tree, stats, statsSum, branchSizes, branchSize, &tree->cells[cell->children[nucleotide]], depth+1);
+      _computeTreeStats(tree, stats, statsSum, branchSizes, branchSize, &tree->cells[cell->children[nucleotide]], depth+1, nNodes, nQualities);
     }
   }
   ++stats[depth][c];
   ++statsSum[c];
 }
 
-void computeTreeStats (tree_t *tree) {
+void computeTreeStats (const tree_t *tree) {
   unsigned int **stats = (unsigned int **) malloc((tree->depth+1) * N_NUCLEOTIDES * sizeof(unsigned int *));
   unsigned int statsSum[N_NUCLEOTIDES] = { 0, 0, 0, 0 };
   unsigned int *branchSizes  = (unsigned int *) calloc(tree->depth+1, sizeof(unsigned int));
+  unsigned int nNodes = 0;
+  unsigned int nQualities = 0;
   unsigned int s;
   for (size_t depth = 0; depth <= tree->depth; ++depth) {
-    stats[depth] = calloc(N_NUCLEOTIDES, sizeof(unsigned int));
+    stats[depth] = (unsigned int *) calloc(N_NUCLEOTIDES, sizeof(unsigned int));
   }
-  _computeTreeStats(tree, stats, statsSum, branchSizes, 0, tree->cells, 0);
+  _computeTreeStats(tree, stats, statsSum, branchSizes, 0, tree->cells, 0, &nNodes, &nQualities);
   puts("Stats on tree");
   for (size_t depth = 0; depth <= tree->depth; ++depth) {
     printf("%zu:", depth);
@@ -418,6 +441,7 @@ void computeTreeStats (tree_t *tree) {
   for (size_t depth = 0; depth <= tree->depth; ++depth) {
     printf("%zu: %u\n", depth, branchSizes[depth]);
   }
+  printf("%u nodes with %u qualities (%.f%%)\n", nNodes, nQualities, ((float) nQualities) / nNodes * 100);
   for (size_t depth = 0; depth <= tree->depth; ++depth) {
     free(stats[depth]);
   }
@@ -488,7 +512,7 @@ void _printTree (const tree_t *tree, FILE *outFile, uint64_t *readId, char *read
   if ((quality = findQuality(&tree->qualities, cellId)) != NULL) {
     //printf("\tGot quality\n"); fflush(stdout);
     ++(*readId);
-    fprintf(outFile, "@read%"PRIu64"_x", *readId);
+    fprintf(outFile, "@read%" PRIu64 "_", *readId);
     for (unsigned int fileId = 0; fileId < parameters->nReadsFiles; ++fileId) {
       fprintf(outFile, "_%lu", cell->counts[fileId]);
     }
@@ -619,7 +643,7 @@ typedef struct {
 } preprocessedIntervals_t;
 
 preprocessedIntervals_t *initializePreprocessedStates () {
-  preprocessedIntervals_t *preprocessedIntervals = malloc(sizeof(preprocessedIntervals_t));
+  preprocessedIntervals_t *preprocessedIntervals = (preprocessedIntervals_t *) malloc(sizeof(preprocessedIntervals_t));
   preprocessedIntervals->nIntervals = (powl(N_NUCLEOTIDES, PREPROCESSED_DEPTH+1) - 1) / (N_NUCLEOTIDES - 1);
   //printf("#intervals: %zu\n", preprocessedIntervals->nIntervals);
   preprocessedIntervals->intervals = (preprocessedInterval_t *) malloc(preprocessedIntervals->nIntervals * sizeof(preprocessedInterval_t));
@@ -899,7 +923,7 @@ void unsetShortCut (shortCut_t *shortCut) {
 }
 
 shortCut_t *initializeShortCut () {
-  shortCut_t *shortCut = malloc(sizeof(shortCut_t));
+  shortCut_t *shortCut = (shortCut_t *) malloc(sizeof(shortCut_t));
   unsetShortCut(shortCut);
   return shortCut;
 }
@@ -948,10 +972,10 @@ void printPath (path_t *path) {
 }
 
 path_t *initializePath (size_t maxDepth) {
-  path_t *path         = malloc(sizeof(path_t));
-  path->nucleotides    = malloc(maxDepth * sizeof(unsigned short));
-  path->cellIds        = malloc((maxDepth+1) * sizeof(uint64_t));
-  path->read           = malloc((maxDepth+1) * sizeof(char));
+  path_t *path         = (path_t *)         malloc(sizeof(path_t));
+  path->nucleotides    = (unsigned short *) malloc(maxDepth * sizeof(unsigned short));
+  path->cellIds        = (uint64_t *)       malloc((maxDepth+1) * sizeof(uint64_t));
+  path->read           = (char *)           malloc((maxDepth+1) * sizeof(char));
   path->maxDepth       = maxDepth;
   path->depth          = 0;
   path->cellIds[0]     = 0;
