@@ -433,8 +433,12 @@ void computeTreeStats (const tree_t *tree) {
     printf("\n");
   }
   printf("sum:");
+  s = 0;
   for (size_t nChildren = 0; nChildren < N_NUCLEOTIDES; ++nChildren) {
-    printf("\t%zu:%u", nChildren, statsSum[nChildren]);
+    s += statsSum[nChildren];
+  }
+  for (size_t nChildren = 0; nChildren < N_NUCLEOTIDES; ++nChildren) {
+    printf("\t%zu:%u (%.f%%)", nChildren, statsSum[nChildren], ((float) statsSum[nChildren]) / s * 100);
   }
   printf("\n");
   puts("Stats on branch sizes");
