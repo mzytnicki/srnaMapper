@@ -152,6 +152,8 @@ char *reverseComplementSequence (char *sequence, size_t size) {
 }
 
 typedef struct {
+  unsigned long int nReads;
+  unsigned long int nShortReads;
   unsigned long int nShortCuts;
   unsigned long int nShortCutSuccesses;
   unsigned long int nDown;
@@ -162,6 +164,8 @@ typedef struct {
 stats_t *stats;
 
 void initializeStats () {
+  stats->nReads             = 0;
+  stats->nShortReads        = 0;
   stats->nShortCuts         = 0;
   stats->nShortCutSuccesses = 0;
   stats->nDown              = 0;
@@ -173,6 +177,7 @@ void printStats () {
   char *savedLocale;
   savedLocale = setlocale (LC_ALL, NULL);
   setlocale(LC_NUMERIC, "");
+  printf("Very small reads: %'lu/%'lu\n", stats->nShortReads, stats->nReads);
   printf("Short cut succeeded %'lu/%'lu\n", stats->nShortCutSuccesses, stats->nShortCuts);
   printf("# BWT preprocessed %'lu/%'lu\n", stats->nDownPreprocessed, stats->nDown);
   printf("# max states %'zu/%'i\n", stats->maxNStates, N_STATES);
@@ -580,7 +585,10 @@ int readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
     assert(strlen(sequence) == (unsigned long) nRead);
     trimSequence(nRead, sequence);
     trimSequence(nRead, quality);
-    addSequence(tree, nRead-1, sequence, quality, fileId);
+    ++stats->nReads;
+    if (! addSequence(tree, nRead-1, sequence, quality, fileId)) {
+      ++stats->nShortReads;
+    }
   }
   free(line);
   free(sequence);
