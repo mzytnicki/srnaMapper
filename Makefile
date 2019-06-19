@@ -1,5 +1,5 @@
 ifdef DEBUG
-	OFLAGS=-O0 -g
+	OFLAGS=-O3 -DNDEBUG -march=native -g
 else ifdef PROF
 	OFLAGS=-O3 -pg
 else
