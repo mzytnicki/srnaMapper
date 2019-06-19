@@ -307,7 +307,7 @@ void freeQualities (quality_t *qualities) {
 }
 
 unsigned int findQualityId (const quality_t *qualities, uint64_t cellId) {
-  if (qualities->qualities[cellId] == NULL) return NO_QUALITY;
+  if ((cellId >= qualities->nQualities) || (qualities->qualities[cellId] == NULL)) return NO_QUALITY;
   return cellId;
 }
 
