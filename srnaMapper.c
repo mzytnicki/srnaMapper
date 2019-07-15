@@ -177,7 +177,7 @@ void printStats () {
   char *savedLocale;
   savedLocale = setlocale (LC_ALL, NULL);
   setlocale(LC_NUMERIC, "");
-  printf("Very small reads: %'lu/%'lu\n", stats->nShortReads, stats->nReads);
+  printf("Very small sequences: %'lu/%'lu\n", stats->nShortReads, stats->nReads);
   printf("Short cut succeeded %'lu/%'lu\n", stats->nShortCutSuccesses, stats->nShortCuts);
   printf("# BWT preprocessed %'lu/%'lu\n", stats->nDownPreprocessed, stats->nDown);
   printf("# max states %'zu/%'i\n", stats->maxNStates, N_STATES);
@@ -496,6 +496,7 @@ bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigne
     cellId <<= NUCLEOTIDES_BITS;
     cellId += CHAR_TO_DNA5[(int) sequence[sequenceId]];
   }
+  printf("First id: %lu, %s\n", cellId, sequence);
   for (--sequenceId; sequenceId >= 0; --sequenceId) {
     cellId = goDown(tree, cellId, CHAR_TO_DNA5[(int) sequence[sequenceId]]);
   }
@@ -597,7 +598,7 @@ int readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
   return EXIT_SUCCESS;
 }
 
-bool _filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned short triplet, count_t *tripletCount) {
+bool __filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned short triplet, count_t *tripletCount) {
   uint64_t nextCellId;
   unsigned short nextTriplet;
   bool foundRead = false;
@@ -616,7 +617,7 @@ bool _filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned 
         cell->children[i] = NO_DATA;
       }
       else {
-        if (! _filterTree(tree, readPos+1, nextCellId, nextTriplet, tripletCount)) {
+        if (! __filterTree(tree, readPos+1, nextCellId, nextTriplet, tripletCount)) {
           cell->children[i] = NO_DATA;
         }
         else {
@@ -625,6 +626,26 @@ bool _filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned 
       }
       if (readPos >= TRIPLET-1) tripletCount[nextTriplet] -= 1;
     }
+  }
+  return foundRead;
+}
+
+bool _filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned short triplet, count_t *tripletCount) {
+  if (readPos == TREE_BASE_SIZE) {
+    return __filterTree(tree, readPos, cellId, triplet, tripletCount);
+  }
+  unsigned short nextTriplet;
+  bool foundRead = false;
+  cellId <<= NUCLEOTIDES_BITS;
+  triplet &= TRIPLET_MASK;
+  triplet <<= NUCLEOTIDES_BITS;
+  for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
+    nextTriplet = triplet | nucleotide;
+    if (readPos >= TRIPLET-1) tripletCount[nextTriplet] += 1;
+    if (__filterTree(tree, readPos+1, cellId + nucleotide, nextTriplet, tripletCount)) {
+      foundRead = true;
+    }
+    if (readPos >= TRIPLET-1) tripletCount[nextTriplet] -= 1;
   }
   return foundRead;
 }
@@ -1008,17 +1029,27 @@ void freePath (path_t *path) {
   free(path);
 }
 
+void appendPath (path_t *path, size_t depth, uint64_t cellId, short nucleotide, char c) {
+  path->nucleotides[depth] = nucleotide;
+  ++path->depth;
+  --path->readPos;
+  path->cellIds[path->depth] = cellId;
+  path->read[path->readPos] = c;
+}
+
 bool goDownTree (const tree_t *tree, path_t *path) {
   uint64_t cellId;
   //printf("  Go down from height %zu with read '%s' ", path->depth, path->read+path->readPos);
+  if (path->depth < TREE_BASE_SIZE) {
+    cellId = path->cellIds[path->depth];
+    cellId <<= NUCLEOTIDES_BITS;
+    appendPath(path, path->depth, cellId, 0, 'A');
+    return true;
+  }
   cell_t *cell = &tree->cells[path->cellIds[path->depth]];
   for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
     if ((cellId = cell->children[nucleotide]) != NO_DATA) {
-      path->nucleotides[path->depth] = nucleotide;
-      ++path->depth;
-      --path->readPos;
-      path->cellIds[path->depth] = cellId;
-      path->read[path->readPos] = DNA5_TO_CHAR[nucleotide];
+      appendPath(path, path->depth, cellId, nucleotide, DNA5_TO_CHAR[nucleotide]);
       //printf("to %zu with read '%s'\n", path->depth, path->read+path->readPos);
       return true;
     }
@@ -1027,14 +1058,41 @@ bool goDownTree (const tree_t *tree, path_t *path) {
   return false;
 }
 
-bool goRightTree (const tree_t *tree, path_t *path) {
-  uint64_t cellId;
-  cell_t *cell;
-  unsetShortCut(path->shortCut);
-  //printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
-  while (path->depth > 0) {
+bool goRightTreeBase (const tree_t *tree, path_t *path) {
+  uint64_t cellId, nextCellId;
+  assert(path->depth < TREE_BASE_SIZE);
+  if (path->depth == 0) {
+    return false;
+  }
+  cellId = path->nucleotides[tree->depth];
+  nextCellId = cellId + 1;
+  while (true) {
+    if (cellId == nextCellId) {
+      return true;
+    }
+    path->cellIds[path->depth] = nextCellId;
+    path->read[path->readPos] = DNA5_TO_CHAR[nextCellId & NUCLEOTIDE_MASK];
+    path->nucleotides[path->depth] = nextCellId & NUCLEOTIDE_MASK; 
+    if (path->depth == 0) {
+      return false;
+    }
     --path->depth;
     ++path->readPos;
+    cellId     >>= NUCLEOTIDES_BITS;
+    nextCellId >>= NUCLEOTIDES_BITS;
+  }
+  return false;
+}
+
+bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
+  cell_t *cell;
+  //printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
+  while (true) {
+    --path->depth;
+    ++path->readPos;
+    if (path->depth < TREE_BASE_SIZE) {
+      return goRightTreeBase(tree, path);
+    }
     //printf("    ... trying depth %zu\n", path->depth);
     for (size_t nucleotide = path->nucleotides[path->depth]+1; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
       cell = &tree->cells[path->cellIds[path->depth]];
@@ -1052,6 +1110,14 @@ bool goRightTree (const tree_t *tree, path_t *path) {
   }
   //printf("    ... going to nothing\n");
   return false;
+}
+
+bool goRightTree (const tree_t *tree, path_t *path) {
+  unsetShortCut(path->shortCut);
+  if (path->depth < TREE_BASE_SIZE) {
+    return goRightTreeNotBase(tree, path);
+  }
+  return goRightTreeBase(tree, path);
 }
 
 bool goNextTree (const tree_t *tree, states_t *states, path_t *path, bool mappable) {
