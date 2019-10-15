@@ -86,6 +86,11 @@
 #define CIGAR_SECONDARY_HIT 0x100
 #define CIGAR_REVERSE 0x10
 
+#define EDGE_STR_LENGTH 32
+#define EDGE_SEQ_LENGTH 26
+#define EDGE_LENGTH_LENGTH 6
+#define MAX_EDGE_LENGTH 13
+
 typedef unsigned long count_t;
 
 const char DNA5_TO_CHAR [5] = { 'A', 'C', 'G', 'T', 'N' };
@@ -269,6 +274,82 @@ int parseCommandLine (int argc, char const **argv) {
   return EXIT_SUCCESS;
 }
 
+
+/******* Edge type *******/
+/**
+ * An edge is the link from one cell to one of its children.
+ * It also contains the sequence for a cell to the child.
+ * The sequence is stored in a int, with the first nucleotides being the sequence, and the last ones the size
+ * It is:
+ *   - the sequence: mix of sequence and length
+ *   - the id of the next cell
+ */
+typedef uint_fast16_t sequence_t;
+
+typedef struct {
+  uint_fast16_t sequence: EDGE_SEQ_LENGTH;
+  uint_fast16_t length:   EDGE_LENGTH_LENGTH;
+  uint64_t cellId;
+} edge_t;
+
+void createEdge (edge_t *edge) {
+  edge->length   = 0;
+  edge->sequence = 0;
+  edge->cellId = NO_DATA;
+}
+
+bool isSetEdge (edge_t *edge) {
+  return (edge->length > 0);
+}
+
+bool isFullEdge (edge_t *edge) {
+  return (edge->length == MAX_EDGE_LENGTH);
+}
+
+void setEdge (edge_t *edge, sequence_t sequence, sequence_t length, uint64_t cellId) {
+  edge->sequence = sequence;
+  edge->length = length;
+  edge->cellId = cellId;
+}
+
+void setCellIdEdge (edge_t *edge, uint64_t cellId) {
+  edge->cellId = cellId;
+}
+
+void addEdgeNucleotide (edge_t *edge, unsigned short nucleotide) {
+  assert(! isFullEdge(edge));
+  //printf("    adding nucl. %u to %i @ %i\n", nucleotide, edge->sequence, edge->length);
+  edge->sequence |= nucleotide << (NUCLEOTIDES_BITS * edge->length);
+  //printf("      now: %i\n", edge->sequence);
+  ++edge->length;
+}
+
+unsigned short getEdgeNucleotide (edge_t *edge, uint_fast16_t length) {
+  assert(length <= edge->length);
+  assert(length <= MAX_EDGE_LENGTH);
+  return ((edge->sequence >> (NUCLEOTIDES_BITS * length)) & NUCLEOTIDE_MASK);
+}
+
+void edgeRemoveFirst (edge_t *edge, size_t length) {
+  assert(length <= edge->length);
+  edge->length -= length;
+  edge->sequence >>= (length * NUCLEOTIDES_BITS);
+}
+
+void edgeRemoveLast (edge_t *edge, size_t newSize) {
+  assert(newSize <= edge->length);
+  edge->length = newSize;
+  edge->sequence &= ((1 << (newSize * NUCLEOTIDES_BITS)) - 1);
+}
+
+void edgeSetCellId (edge_t *edge, uint64_t cellId) {
+  edge->cellId = cellId;
+}
+
+void printEdge (edge_t *edge) {
+  printf("%u -> %" PRIu64, edge->sequence, edge->cellId);
+}
+
 /******* Cell type *******/
 /**
  * A cell is a prefix of the reads tree.
@@ -278,13 +359,13 @@ int parseCommandLine (int argc, char const **argv) {
  */
 
 typedef struct {
-  uint64_t children [N_NUCLEOTIDES];
+  edge_t edges [N_NUCLEOTIDES];
   count_t *counts;
 } cell_t;
 
 void createCell (cell_t *cell) {
   for (unsigned short i = 0; i < N_NUCLEOTIDES; ++i) {
-    cell->children[i] = NO_DATA;
+    createEdge(&cell->edges[i]);
   }
   //printf("%u %zu %p\n", parameters->nReadsFiles, sizeof(count_t), cell);
   cell->counts = (count_t *) calloc(parameters->nReadsFiles, sizeof(count_t));
@@ -294,11 +375,36 @@ void freeCell (cell_t *cell) {
   free(cell->counts);
 }
 
+void addEdge (cell_t *cell, sequence_t sequence, sequence_t length, uint64_t childId) {
+  unsigned short nucleotide = sequence & NUCLEOTIDE_MASK;
+  setEdge(&cell->edges[nucleotide], sequence, length, childId);
+}
+
+/**
+ * Split an edge into two.  Add the remaining part of the edge to a new cell.
+ * When newEdgeId == N_NUCLEOTIDES, the nucleotide at the split point is not known
+ */
+void splitEdge (edge_t *edge, cell_t *newCell, uint64_t newCellId, sequence_t length, unsigned short newEdgeId) {
+  edge_t *newEdge;
+  //printf("   Splitting edge %p %i into %u -> %" PRIu64 " at point %zu and id %i\n", edge, edge->sequence, edge->length, edge->cellId, length, newEdgeId);
+  assert(edge->cellId != NO_DATA);
+  assert(length < edge->length);
+  assert(newCellId != NO_DATA);
+  if (newEdgeId == N_NUCLEOTIDES) newEdgeId = getEdgeNucleotide(edge, length);
+  newEdge = &newCell->edges[newEdgeId];
+  newEdge->sequence = edge->sequence;
+  newEdge->length = edge->length;
+  edgeRemoveFirst(newEdge, length);
+  edgeRemoveLast(edge, length);
+  newEdge->cellId = edge->cellId;
+  edge->cellId = newCellId;
+  //printf("   split edge %p into %i (%u) -> %" PRIu64 " and %p %i (%u) -> %" PRIu64 "\n", edge, edge->sequence, edge->length, edge->cellId, newEdge, newEdge->sequence, newEdge->length, newEdge->cellId);
+}
+
 void printCell (cell_t *cell) {
-  uint64_t child;
   for (unsigned short i = 0; i < N_NUCLEOTIDES; ++i) {
-    if ((child = cell->children[i]) != NO_DATA) {
-      printf("%c -> %" PRIu64 "\n", "ACGT"[i], child);
+    if (isSetEdge(&cell->edges[i])) {
+      printEdge(&cell->edges[i]);
     }
   }
 }
@@ -363,6 +469,7 @@ void addQuality (quality_t *qualities, uint64_t cellId, size_t l, char *quality)
 }
 
 void replaceQuality (quality_t *qualities, unsigned int qualityId, size_t l, char *quality) {
+  //printf("Quality: %zu vs %zu\n", strlen(qualities->qualities[qualityId]), strlen(quality));
   assert(strlen(qualities->qualities[qualityId]) == strlen(quality));
   assert(strlen(quality) == l);
   for (size_t i = 0; i < l; ++i) {
@@ -413,29 +520,34 @@ void createTree (tree_t *tree) {
 }
 
 void _computeTreeStats (const tree_t *tree, unsigned int **stats, unsigned int *statsSum, unsigned int *branchSizes, unsigned int branchSize, cell_t *cell, size_t depth, unsigned int *nNodes, unsigned int *nQualities) {
+  edge_t *edge;
+  size_t length;
   unsigned int c = 0;
-  for (short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-    if (cell->children[nucleotide] != NO_DATA) {
+  for (short edgeId = 0; edgeId < N_NUCLEOTIDES; ++edgeId) {
+    edge = &cell->edges[edgeId];
+    if (edge->cellId != NO_DATA) {
+      length = edge->length;
       ++c;
       ++(*nNodes);
-      if (findQualityId(&tree->qualities, cell->children[nucleotide]) != NO_QUALITY) {
+      if (findQualityId(&tree->qualities, edge->cellId) != NO_QUALITY) {
         ++(*nQualities);
       }
     }
   }
   if (c == 1) {
-    ++branchSize;
+    branchSize += length;
   }
   else {
     ++branchSizes[branchSize];
     branchSize = 0;
   }
-  for (short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-    if (cell->children[nucleotide] != NO_DATA) {
-      _computeTreeStats(tree, stats, statsSum, branchSizes, branchSize, &tree->cells[cell->children[nucleotide]], depth+1, nNodes, nQualities);
+  for (short edgeId = 0; edgeId < N_NUCLEOTIDES; ++edgeId) {
+    edge = &cell->edges[edgeId];
+    if (edge->cellId != NO_DATA) {
+      _computeTreeStats(tree, stats, statsSum, branchSizes, branchSize, &tree->cells[edge->cellId], depth+edge->length, nNodes, nQualities);
     }
   }
-  printf("At depth %zu/%zu with nucleotide %i\n", depth, tree->depth, c);
+  //printf("At depth %zu/%zu with nucleotide %i\n", depth, tree->depth, c);
   ++stats[depth][c];
   ++statsSum[c];
 }
@@ -520,7 +632,43 @@ uint64_t addCell (tree_t *tree) {
   return tree->nCells-1;
 }
 
-uint64_t goDown (tree_t *tree, uint64_t cellId, unsigned short childId) {
+/**
+ * Create a new node, split an edge into two, and add the remaining part of the edge to then new cell.
+ */
+uint64_t splitEdgeTree (tree_t *tree, edge_t *edge, sequence_t length, unsigned short newEdgeId) {
+  uint64_t newCellId = addCell(tree);
+  splitEdge(edge, &tree->cells[newCellId], newCellId, length, newEdgeId);
+  return newCellId;
+}
+
+/**
+ * Add the rest of the sequence and extend the edge
+ */
+uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *sequence, int sequenceId, edge_t *edge) {
+  unsigned short nucleotide;
+  //printf("Adding sequence %s @%" PRIu64 "\n", sequence, cellId);
+  for (; sequenceId >= 0; --sequenceId) {
+    nucleotide = CHAR_TO_DNA5[(int) sequence[sequenceId]];
+    if (edge == NULL) {
+      edge = &tree->cells[cellId].edges[nucleotide];
+    }
+    //printf("  seq id: %d, edge: %p (%i), nucleotide: %c\n", sequenceId, edge, edge->length, DNA5_TO_CHAR[nucleotide]);
+    addEdgeNucleotide(edge, nucleotide);
+    if (edge->length == MAX_EDGE_LENGTH) {
+      cellId = addCell(tree);
+      //printf("  to the end: %" PRIu64 "\n", cellId);
+      setCellIdEdge(edge, cellId);
+      edge = NULL;
+    }
+  }
+  // set node
+  if (edge != NULL) {
+      cellId = addCell(tree);
+      setCellIdEdge(edge, cellId);
+  }
+  //printf("  over with %" PRIu64 "\n", cellId);
+  return cellId;
+  /*
   cell_t *cell = &tree->cells[cellId];
   uint64_t newCellId = cell->children[childId];
   if (newCellId != NO_DATA) {
@@ -530,6 +678,58 @@ uint64_t goDown (tree_t *tree, uint64_t cellId, unsigned short childId) {
   cell = &tree->cells[cellId]; // may be reallocated!
   cell->children[childId] = newCellId;
   return newCellId;
+  */
+}
+
+
+uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int sequenceId) {
+  size_t edgeLength = 0;
+  unsigned short sequenceNucleotide, edgeNucleotide;
+  edge_t *edge = NULL;
+  //printf("Following sequence %s @%" PRIu64 "\n", sequence, cellId); fflush(stdout);
+  for (; sequenceId >= 0; --sequenceId) {
+    sequenceNucleotide = CHAR_TO_DNA5[(int) sequence[sequenceId]];
+    if (edge == NULL) {
+      //printf("  new edge\n"); fflush(stdout);
+      edge = &tree->cells[cellId].edges[sequenceNucleotide];
+    }
+    //printf("  seq id: %d, edge: %p (%i/%zu) -> %" PRIu64 ", nucleotide: %c\n", sequenceId, edge, edge->length, edgeLength, edge->cellId, DNA5_TO_CHAR[sequenceNucleotide]); fflush(stdout);
+    if (edge->cellId == NO_DATA) {
+      return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
+    }
+    edgeNucleotide = getEdgeNucleotide(edge, edgeLength); fflush(stdout);
+    //printf("  edge %p, value: %i, len: %zu/%u, nucleotide: %c (%u)\n", edge, edge->sequence, edgeLength, edge->length, DNA5_TO_CHAR[edgeNucleotide], edgeNucleotide); fflush(stdout);
+    if (sequenceNucleotide == edgeNucleotide) {
+      //printf("  following to %" PRIu64 "\n", edge->cellId); fflush(stdout);
+      ++edgeLength;
+      if (edgeLength == edge->length) {
+        cellId = edge->cellId;
+        //printf("  to the end -> %" PRIu64 "\n", cellId); fflush(stdout);
+        edge = NULL;
+        edgeLength = 0;
+      }
+    }
+    else {
+      //printf("  split @ %zu\n", edgeLength); fflush(stdout);
+      cellId = edge->cellId;
+      if (edgeLength == 0) {
+        edge = &tree->cells[cellId].edges[sequenceNucleotide];
+        //printf("  edge is %p\n", edge); fflush(stdout);
+        return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
+      }
+      else {
+        cellId = splitEdgeTree(tree, edge, edgeLength, edgeNucleotide);
+        edge   = &tree->cells[cellId].edges[sequenceNucleotide];
+        return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
+      }
+    }
+  }
+  // set node
+  //printf("  over with %zu\n", edgeLength); fflush(stdout);
+  if (edgeLength != 0) {
+    cellId = splitEdgeTree(tree, edge, edgeLength, N_NUCLEOTIDES);
+  }
+  return cellId;
 }
 
 bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigned int fileId) {
@@ -547,16 +747,18 @@ bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigne
   }
   //printf("First id: %lu, %s\n", cellId, sequence);
   assert(cellId < N_TREE_BASE);
-  for (--sequenceId; sequenceId >= 0; --sequenceId) {
-    cellId = goDown(tree, cellId, CHAR_TO_DNA5[(int) sequence[sequenceId]]);
-  }
+  cellId = addSequenceFollow(tree, cellId, sequence, --sequenceId);
   setQuality(tree, cellId, l, quality, fileId);
   tree->depth = MAX(tree->depth, l);
   return true;
 }
 
+/**
+ * Print the last nucleotides (close to the leaves) of the tree.
+ */
 void __printTree (const tree_t *tree, FILE *outFile, uint64_t *readId, char *read, size_t readPos, uint64_t cellId) {
   uint64_t nextCellId;
+  edge_t *edge;
   cell_t *cell = &tree->cells[cellId];
   char *quality;
   //printf("Read: %s at %"PRIu64 "\n", read+tree->depth-readPos, cellId);
@@ -568,17 +770,24 @@ void __printTree (const tree_t *tree, FILE *outFile, uint64_t *readId, char *rea
       fprintf(outFile, "_%lu", cell->counts[fileId]);
     }
     fprintf(outFile, "\n%s\n+\n%s\n", read+tree->depth-readPos, quality);
-    assert(strlen(read+tree->depth-readPos) == strlen(cell->quality));
+    //assert(strlen(read+tree->depth-readPos) == strlen(cell->quality));
   }
   for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-    nextCellId = cell->children[nucleotide];
+    edge = &cell->edges[nucleotide];
+    nextCellId = edge->cellId;
     if (nextCellId != NO_DATA) {
-      read[tree->depth-readPos-1] = DNA5_TO_CHAR[nucleotide];
-      __printTree(tree, outFile, readId, read, readPos+1, nextCellId);
+      for (size_t i = 0; i < edge->length; ++i) {
+        assert(1 + readPos + i <= tree->depth);
+        read[tree->depth-readPos-1-i] = DNA5_TO_CHAR[getEdgeNucleotide(edge, i)];
+      }
+      __printTree(tree, outFile, readId, read, readPos + edge->length, nextCellId);
     }
   }
 }
 
+/**
+ * Print the first nucleotides (close to the root) of the tree, then call __printTree.
+ */
 void _printTree (const tree_t *tree, FILE *outFile, uint64_t *readId, char *read, size_t readPos, uint64_t cellId) {
   if (readPos == TREE_BASE_SIZE) {
     __printTree (tree, outFile, readId, read, readPos, cellId);
@@ -592,6 +801,9 @@ void _printTree (const tree_t *tree, FILE *outFile, uint64_t *readId, char *read
   }
 }
 
+/**
+ * Open/close file, allocate the memory, and call _printTree
+ */
 int printTree (char *fileName, const tree_t *tree) {
   FILE *outFile = fopen(fileName, "w");
   if (outFile == NULL) return EXIT_FAILURE;
@@ -646,38 +858,62 @@ int readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
   return EXIT_SUCCESS;
 }
 
+/**
+ * Count the 3-mer, and possibly filter
+ */
 bool __filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned short triplet, count_t *tripletCount) {
+  edge_t *edge;
   uint64_t nextCellId;
-  unsigned short nextTriplet;
   bool foundRead = false;
+  bool thresholdReached = false;
   cell_t *cell = &tree->cells[cellId];
-  triplet &= TRIPLET_MASK;
-  triplet <<= NUCLEOTIDES_BITS;
+  count_t prevTripletCount [N_TRIPLETS];
+  unsigned short prevTriplet = triplet;
+  size_t prevReadPos = readPos;
+  unsigned short nucleotide;
+  memcpy(prevTripletCount, tripletCount, N_TRIPLETS * sizeof(count_t));
   if (findQuality(&tree->qualities, cellId) != NULL) {
     foundRead = true;
   }
-  for (unsigned short i = 0; i < N_NUCLEOTIDES; ++i) {
-    nextCellId = cell->children[i];
+  for (unsigned short edgeId = 0; edgeId < N_NUCLEOTIDES; ++edgeId) {
+    thresholdReached = false;
+    memcpy(tripletCount, prevTripletCount, N_TRIPLETS * sizeof(count_t));
+    triplet = prevTriplet;
+    readPos = prevReadPos;
+    edge = &cell->edges[edgeId];
+    nextCellId = edge->cellId;
+    //printf("Current triplet: %u @ readPos: %zu\n", triplet, readPos);
     if (nextCellId != NO_DATA) {
-      nextTriplet = triplet | i;
-      if (readPos >= TRIPLET-1) tripletCount[nextTriplet] += 1;
-      if (tripletCount[nextTriplet] > parameters->lowComplexityThreshold) {
-        cell->children[i] = NO_DATA;
+      for (size_t edgeLength = 0; edgeLength < edge->length; ++edgeLength, ++readPos) {
+        nucleotide = getEdgeNucleotide(edge, edgeLength);
+        triplet &= TRIPLET_MASK;
+        triplet <<= NUCLEOTIDES_BITS;
+        triplet = triplet | nucleotide;
+        //printf("  triplet: %u @ length: %zu, nucleotide: %i\n", triplet, edgeLength, nucleotide);
+        if (readPos >= TRIPLET-1) tripletCount[triplet] += 1;
+        if (tripletCount[triplet] > parameters->lowComplexityThreshold) {
+          thresholdReached = true;
+        }
+     }
+     if (thresholdReached) {
+        edge->cellId = NO_DATA;
       }
       else {
-        if (! __filterTree(tree, readPos+1, nextCellId, nextTriplet, tripletCount)) {
-          cell->children[i] = NO_DATA;
+        if (! __filterTree(tree, readPos, nextCellId, triplet, tripletCount)) {
+          edge->cellId = NO_DATA;
         }
         else {
           foundRead = true;
         }
       }
-      if (readPos >= TRIPLET-1) tripletCount[nextTriplet] -= 1;
     }
   }
   return foundRead;
 }
 
+/**
+ * Initialize counts and run _filterTree
+ */
 bool _filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned short triplet, count_t *tripletCount) {
   if (readPos == TREE_BASE_SIZE) {
     return __filterTree(tree, readPos, cellId, triplet, tripletCount);
@@ -690,7 +926,7 @@ bool _filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned 
   for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
     nextTriplet = triplet | nucleotide;
     if (readPos >= TRIPLET-1) tripletCount[nextTriplet] += 1;
-    if (__filterTree(tree, readPos+1, cellId + nucleotide, nextTriplet, tripletCount)) {
+    if (_filterTree(tree, readPos+1, cellId + nucleotide, nextTriplet, tripletCount)) {
       foundRead = true;
     }
     if (readPos >= TRIPLET-1) tripletCount[nextTriplet] -= 1;
@@ -698,6 +934,9 @@ bool _filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned 
   return foundRead;
 }
 
+/**
+ * Initialize counts and run _filterTree
+ */
 unsigned int filterTree (const tree_t *tree) {
   count_t tripletCount [N_TRIPLETS];
   for (unsigned int i = 0; i < N_TRIPLETS; ++i) tripletCount[i] = 0;
@@ -1085,8 +1324,11 @@ void addMiss (shortCut_t *shortCut) {
 typedef struct {
   unsigned short *nucleotides;
   uint64_t       *cellIds;
+  size_t          nCells;
   size_t          maxDepth;
   size_t          depth;
+  edge_t          edge;
+  size_t          edgeLength;
   char           *read;
   size_t          readPos;
   shortCut_t     *shortCut;
@@ -1099,20 +1341,24 @@ void printPath (path_t *path) {
     assert(path->nucleotides[i] < N_NUCLEOTIDES);
     printf("%c ", "ACGT"[(int) path->nucleotides[i]]);
   }
-  printf("(depth: %zu, read pos: %zu, cellId: %" PRIu64 ")\n", path->depth, path->readPos, path->cellIds[path->depth]);
+  printf("(depth: %zu, # cells: %zu, read pos: %zu, cellId: %" PRIu64 ")\n", path->depth, path->nCells, path->readPos, (path->nCells == 0)? (uint64_t) -1: path->cellIds[path->nCells-1]); fflush(stdout);
 }
 
 path_t *initializePath (size_t maxDepth) {
   path_t *path         = (path_t *)         malloc(sizeof(path_t));
   path->nucleotides    = (unsigned short *) malloc(maxDepth * sizeof(unsigned short));
   path->cellIds        = (uint64_t *)       malloc((maxDepth+1) * sizeof(uint64_t));
+  path->nCells         = 0;
   path->read           = (char *)           malloc((maxDepth+1) * sizeof(char));
   path->maxDepth       = maxDepth;
   path->depth          = 0;
+  path->edge.length    = 0;
+  path->edgeLength     = 0;
   path->cellIds[0]     = 0;
   path->read[maxDepth] = 0;
   path->readPos        = maxDepth;
   path->shortCut       = initializeShortCut();
+  path->cellIds[0]     = 0;
   return path;
 }
 
@@ -1123,37 +1369,71 @@ void freePath (path_t *path) {
   free(path);
 }
 
-void appendPath (path_t *path, size_t depth, uint64_t cellId, short nucleotide, char c) {
-  path->nucleotides[depth] = nucleotide;
+void appendNucleotideTree (path_t *path, short nucleotide, char c) {
+  path->nucleotides[path->depth] = nucleotide;
   ++path->depth;
   --path->readPos;
-  path->cellIds[path->depth] = cellId;
   path->read[path->readPos] = c;
 }
 
-bool goDownTree (const tree_t *tree, path_t *path) {
-  uint64_t cellId;
-  //printf("  Go down from height %zu with read '%s' ", path->depth, path->read+path->readPos);
-  if (path->depth < TREE_BASE_SIZE) {
-    cellId = path->cellIds[path->depth];
-    cellId <<= NUCLEOTIDES_BITS;
-    appendPath(path, path->depth, cellId, 0, 'A');
-    return true;
-  }
-  cell_t *cell = &tree->cells[path->cellIds[path->depth]];
-  for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-    if ((cellId = cell->children[nucleotide]) != NO_DATA) {
-      appendPath(path, path->depth, cellId, nucleotide, DNA5_TO_CHAR[nucleotide]);
-      //printf("to %zu with read '%s'\n", path->depth, path->read+path->readPos);
-      return true;
-    }
-  }
-  //printf("to nothing\n");
-  return false;
+/**
+ * Step into the last cells of the tree in a DFS fashion.
+ */
+bool goDownTreeBase (path_t *path) {
+  uint64_t cellId = path->cellIds[path->nCells] << NUCLEOTIDES_BITS;
+  appendNucleotideTree(path, 0, 'A');
+  path->cellIds[path->nCells++] = cellId;
+  return true;
 }
 
+/**
+ * Step into the first cells of the tree in a DFS fashion.
+ */
+bool goDownTreeNotBase (const tree_t *tree, path_t *path) {
+  edge_t *edge = NULL;
+  unsigned short nucleotide;
+  if (path->edgeLength == 0) {
+    cell_t *cell = &tree->cells[path->cellIds[path->nCells]];
+    for (nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
+      edge = &cell->edges[nucleotide];
+      if (isSetEdge(edge)) {
+        path->edge       = *edge;
+        path->edgeLength = 1;
+        appendNucleotideTree(path, nucleotide, DNA5_TO_CHAR[nucleotide]);
+        //printf("to %zu with read '%s'\n", path->depth, path->read+path->readPos);
+        return true;
+      }
+    }
+    return false;
+  }
+  nucleotide = getEdgeNucleotide(&path->edge, path->edgeLength);
+  ++path->edgeLength;
+  appendNucleotideTree(path, nucleotide, DNA5_TO_CHAR[nucleotide]);
+  if (path->edgeLength == path->edge.length) {
+    path->edgeLength = 0;
+    path->cellIds[path->nCells++] = path->edge.cellId;
+  }
+  return true;
+}
+
+/**
+ * Step into the tree in a DFS fashion.
+ * Return false if search is exhausted.
+ */
+bool goDownTree (const tree_t *tree, path_t *path) {
+  //printf("  Go down from height %zu with read '%s' ", path->depth, path->read+path->readPos);
+  if (path->depth < TREE_BASE_SIZE) {
+    return goDownTreeBase(path);
+  }
+  return goDownTreeNotBase(tree, path);
+  //printf("to nothing\n");
+}
+
+/**
+ * Step into the last cells of the tree in a BFS fashion.
+ */
 bool goRightTreeBase (path_t *path) {
-  uint64_t cellId = path->cellIds[path->depth], nextCellId = cellId + 1, mask = NUCLEOTIDE_MASK;
+  uint64_t cellId = path->cellIds[path->nCells], nextCellId = cellId + 1, mask = NUCLEOTIDE_MASK;
   unsigned short newNucleotide = 0;
   assert(path->depth <= TREE_BASE_SIZE);
   //printf("    Entering go right base will cell %" PRIu64 " at depth %zu and read pos %zu\n", cellId, path->depth, path->readPos);
@@ -1167,51 +1447,14 @@ bool goRightTreeBase (path_t *path) {
     path->read[path->readPos+offset+1] = DNA5_TO_CHAR[newNucleotide];
     path->nucleotides[path->depth-offset-1] = newNucleotide;
   }
-  path->cellIds[path->depth] = nextCellId;
-  //printf("      Leaving base will cell %" PRIu64 ", nucleotide %c\n", path->cellIds[path->depth], "ACGT"[newNucleotide]);
+  path->cellIds[path->nCells] = nextCellId;
+  //printf("      Leaving base will cell %" PRIu64 ", nucleotide %c\n", path->cellIds[path->nCells], "ACGT"[newNucleotide]);
   return true;
-  /*
-  while (path->depth > 0) {
-    if ((cellId & NUCLEOTIDE_MASK) != NUCLEOTIDE_MASK) {
-      ++cellId;
-      newNucleotide = cellId & NUCLEOTIDE_MASK;
-      path->cellIds[path->depth] = cellId;
-      path->read[path->readPos] = DNA5_TO_CHAR[newNucleotide];
-      path->nucleotides[path->depth] = newNucleotide;
-      printf("      Leaving base will cell %" PRIu64 " at depth %zu\n", path->cellIds[path->depth], path->depth);
-      return true;
-    }
-    --path->depth;
-    ++path->readPos;
-    cellId >>= NUCLEOTIDES_BITS;
-  }
-  return false;
-  */
-  /*
-  if (path->depth == 0) {
-    return false;
-  }
-  cellId = path->nucleotides[tree->depth];
-  nextCellId = cellId + 1;
-  while (true) {
-    if (cellId == nextCellId) {
-      return true;
-    }
-    path->cellIds[path->depth] = nextCellId;
-    path->read[path->readPos] = DNA5_TO_CHAR[nextCellId & NUCLEOTIDE_MASK];
-    path->nucleotides[path->depth] = nextCellId & NUCLEOTIDE_MASK; 
-    if (path->depth == 0) {
-      return false;
-    }
-    --path->depth;
-    ++path->readPos;
-    cellId     >>= NUCLEOTIDES_BITS;
-    nextCellId >>= NUCLEOTIDES_BITS;
-  }
-  return false;
- */
 }
 
+/**
+ * Step into the first cells of the tree in a BFS fashion.
+ */
 bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
   uint64_t cellId;
   cell_t *cell;
@@ -1224,13 +1467,13 @@ bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
     ++path->readPos;
     //printf("    ... trying depth %zu\n", path->depth);
     for (size_t nucleotide = path->nucleotides[path->depth]+1; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-      cell = &tree->cells[path->cellIds[path->depth]];
+      cell = &tree->cells[path->cellIds[path->nCells]];
       //printf("      ... nucleotide is %zu, cell is %" PRIu64 "\n", nucleotide, cell->children[nucleotide]); 
-      if ((cellId = cell->children[nucleotide]) != NO_DATA) {
+      if ((cellId = cell->edges[nucleotide].cellId) != NO_DATA) {
         path->nucleotides[path->depth] = nucleotide;
         ++path->depth;
         --path->readPos;
-        path->cellIds[path->depth] = cellId;
+        path->cellIds[path->nCells] = cellId;
         path->read[path->readPos] = DNA5_TO_CHAR[nucleotide];
         //printf("    ... going to %zu with read '%s'\n", path->depth, path->read+path->readPos);
         return true;
@@ -1242,7 +1485,8 @@ bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
 }
 
 /**
- * Go to child node in reads tree
+ * Step into the tree in a BFS fashion.
+ * Return false if search is exhausted.
  */
 bool goRightTree (const tree_t *tree, path_t *path) {
   //printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
@@ -1254,7 +1498,7 @@ bool goRightTree (const tree_t *tree, path_t *path) {
 }
 
 /**
- * Go to next sibling node in reads tree (if none, go to uncle)
+ * Go to next child node in reads tree.  If none, go to sibling;
  */
 bool goNextTree (const tree_t *tree, states_t *states, path_t *path, bool mappable) {
   //printf("  Goto next\n");
@@ -1421,7 +1665,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   state_t *previousState;
   state_t nextState;
   bool mapFound = false;
-  //printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]);
+  printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]);
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
     previousState = &states->states[depth-1][nErrors][stateId];
     if (goDownBwt(states, previousState, nt, &nextState)) {
@@ -1441,14 +1685,14 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
 
 /**
  * Find the mappings with nErrors at depth.
- * Supposes that mappings are depth-1 with nErrors are computed.
- * Supposes that mappings are depth with nErrors-1 are computed.
+ * Supposes that mappings at depth-1 with nErrors are computed.
+ * Supposes that mappings at depth with nErrors-1 are computed.
  */
 bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, state_t *newState) {
-  //printf("    depth %zu, %zu errors, nucleotide %c, %zu states, min errors: %zu\n", depth, nErrors, "ACGT"[path->nucleotides[depth-1]],  states->nStates[depth-1][nErrors-1], states->minErrors[depth-1]);
-  //printf("      Path is: ");
-  //for (size_t i = 0; i < depth; ++i) putchar("ACGT"[path->nucleotides[i]]);
-  //putchar('\n');
+  printf("    depth %zu, %zu errors, nucleotide %c, %zu states, min errors: %zu\n", depth, nErrors, "ACGT"[path->nucleotides[depth-1]],  states->nStates[depth-1][nErrors-1], states->minErrors[depth-1]);
+  printf("      Path is: ");
+  for (size_t i = 0; i < depth; ++i) putchar("ACGT"[path->nucleotides[i]]);
+  putchar('\n');
   //TODO may be skipped?
   if ((states->maxErrors[depth] != SIZE_MAX) && (states->maxErrors[depth] >= nErrors)) {
     //printf("      first case: %zu/%zu/%zu %zu/%i\n", states->maxErrors[depth], nErrors, SIZE_MAX, states->nStates[depth][nErrors], N_STATES);
@@ -1538,6 +1782,7 @@ bool addError (states_t *states, path_t *path) {
  */
 void mapWithErrors (states_t *states, path_t *path) {
   assert(path->depth <= TREE_BASE_SIZE);
+  assert(path->depth > 0);
   state_t newState;
   mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1]);
   //TODO: Optimize this
@@ -1550,10 +1795,13 @@ void mapWithErrors (states_t *states, path_t *path) {
 }
 
 bool shortCutCondition (const states_t *states, const path_t *path) {
+  return false;
   return ((path->depth >= path->shortCut->depth) && (states->minErrors[path->depth] == 0) && (states->nStates[path->depth][0] == 1) && (getStateInterval(&states->states[path->depth][0][0])->k == getStateInterval(&states->states[path->depth][0][0])->l));
 }
 
+/*
 bool tryShortCut (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFile) {
+  return false;
   shortCut_t *shortCut = path->shortCut;
   size_t depth = path->depth;
   uint64_t cellId = path->cellIds[depth];
@@ -1603,6 +1851,15 @@ bool tryShortCut (const tree_t *tree, states_t *states, path_t *path, FILE *outp
   assert(false);
   return true;
 }
+*/
+
+void printProgress(path_t *path) {
+  if (path->depth == TREE_BASE_SIZE) {
+    if ((path->cellIds[path->nCells] & 11111) == 0) {
+      fprintf(stderr, "Progress: %" PRIu64 "/%u\n", path->cellIds[path->nCells], N_TREE_BASE);
+    }
+  }
+}
 
 /**
  * Map one nucleotide
@@ -1610,15 +1867,11 @@ bool tryShortCut (const tree_t *tree, states_t *states, path_t *path, FILE *outp
  * We are looking for the corresponding mappings at the path->depth level.
  */
 bool findBestMapping (states_t *states, path_t *path) {
-  //printf("Finding best mapping\n");
-  //printPath(path);
-  //printStates(states, path->depth);
-  //for (size_t i = 0; i < states->nStates[path->depth-1][states->minErrors[path->depth-1]]; ++i) { printState(&states->states[path->depth-1][states->minErrors[path->depth-1]][i], path->maxDepth); }
-  if (path->depth == TREE_BASE_SIZE) {
-    if ((path->cellIds[path->depth] & 11111) == 0) {
-      fprintf(stderr, "Progress: %" PRIu64 "/%u\n", path->cellIds[path->depth], N_TREE_BASE);
-    }
-  }
+  printf("Finding best mapping\n");
+  printPath(path);
+  printStates(states, path->depth);
+  for (size_t i = 0; i < states->nStates[path->depth-1][states->minErrors[path->depth-1]]; ++i) { printState(&states->states[path->depth-1][states->minErrors[path->depth-1]][i], path->maxDepth); }
+  printProgress(path);
   if (path->depth <= TREE_BASE_SIZE) {
     //printf("  with errors\n");
     mapWithErrors(states, path);
@@ -1648,24 +1901,40 @@ void _map (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFi
     if (! goNextTree(tree, states, path, mappable)) {
       return;
     }
-    //printCell(&tree->cells[path->cellIds[path->depth]]);
+    //printCell(&tree->cells[path->cellIds[path->nCells]]);
     // prefix of the read is not mappable
     mappable = findBestMapping(states, path);
     if ((path->depth >= TREE_BASE_SIZE) && (mappable)) {
-      if ((quality = findQuality(&tree->qualities, path->cellIds[path->depth])) != NULL) {
-        printRead(states, path, quality, tree->cells[path->cellIds[path->depth]].counts, outputSamFile);
+      if ((quality = findQuality(&tree->qualities, path->cellIds[path->nCells])) != NULL) {
+        printRead(states, path, quality, tree->cells[path->cellIds[path->nCells]].counts, outputSamFile);
       }
+      /*
       if (shortCutCondition(states, path)) {
         if (! tryShortCut(tree, states, path, outputSamFile)) {
           //printf("Short cut with negative exit\n");
           return;
         }
       }
+      */
     }
   }
 }
 
-FILE *printSamHeader() {
+/**
+ * Allocate/free structures before/after mapping
+ */
+void map (const tree_t *tree, FILE *outputSamFile) {
+  states_t *states = initializeStates(tree->depth);
+  path_t   *path   = initializePath(tree->depth);
+  printf("depth: %zu\n", tree->depth);
+  //addState(&states, 0, 0, firstState);
+  //goDownTree(tree, &path);
+  _map(tree, states, path, outputSamFile);
+  freeStates(states);
+  freePath(path);
+}
+
+FILE *openSamFile() {
   FILE *outputSamFile = fopen(parameters->outputSamFileName, "w");
   if (outputSamFile == NULL) {
     return NULL;
@@ -1675,19 +1944,6 @@ FILE *printSamHeader() {
     fprintf(outputSamFile, "@SQ\tSN:%s\tLN:%d\n", bns->anns[i].name, bns->anns[i].len);
   }
   return outputSamFile;
-}
-
-/**
- * Allocate/free structures before/after mapping
- */
-void map (const tree_t *tree, FILE *outputSamFile) {
-  states_t *states = initializeStates(tree->depth);
-  path_t   *path   = initializePath(tree->depth);
-  //addState(&states, 0, 0, firstState);
-  //goDownTree(tree, &path);
-  _map(tree, states, path, outputSamFile);
-  freeStates(states);
-  freePath(path);
 }
 
 int main(int argc, char const ** argv) {
@@ -1728,7 +1984,7 @@ int main(int argc, char const ** argv) {
   pac = idx->pac;
   bwt = idx->bwt;
   bns = idx->bns;
-  FILE *outputSamFile = printSamHeader();
+  FILE *outputSamFile = openSamFile();
   if (outputSamFile == NULL) {
     printf("Error!  Cannot write to output SAM file '%s'.\nExiting.\n", param.outputSamFileName);
   }
