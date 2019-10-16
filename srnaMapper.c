@@ -1402,6 +1402,7 @@ bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
     assert(path->depth >= path->edgeLength);
     path->depth   -= path->edgeLength;
     path->readPos += path->edgeLength;
+    assert(tree->cells[path->cellIds[path->nCells]].edges[path->nucleotides[path->depth]].cellId == path->edges[path->nCells].cellId);
     for (size_t nucleotide = path->nucleotides[path->depth]+1; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
       printf("    ... trying nucleotide %c\n", "ACGTN"[nucleotide]);
       edge = &tree->cells[path->cellIds[path->nCells]].edges[nucleotide];
