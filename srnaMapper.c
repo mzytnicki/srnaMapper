@@ -969,56 +969,8 @@ typedef struct {
   bwtint_t k, l;
 } bwtinterval_t;
 
-typedef struct preprocessedInterval_t preprocessedInterval_t;
-
-struct preprocessedInterval_t {
-  bwtinterval_t interval;
-};
-
-typedef struct {
-  preprocessedInterval_t *intervals;
-  size_t nIntervals;
-} preprocessedIntervals_t;
-
-preprocessedIntervals_t *initializePreprocessedStates () {
-  preprocessedIntervals_t *preprocessedIntervals = (preprocessedIntervals_t *) malloc(sizeof(preprocessedIntervals_t));
-  preprocessedIntervals->nIntervals = (powl(N_NUCLEOTIDES, PREPROCESSED_DEPTH+1) - 1) / (N_NUCLEOTIDES - 1);
-  //printf("#intervals: %zu\n", preprocessedIntervals->nIntervals);
-  preprocessedIntervals->intervals = (preprocessedInterval_t *) malloc(preprocessedIntervals->nIntervals * sizeof(preprocessedInterval_t));
-  return preprocessedIntervals;
-}
-
-void freePreprocessedStates (preprocessedIntervals_t *preprocessedIntervals) {
-  free(preprocessedIntervals->intervals);
-}
 
 //static unsigned long nIntervals;
-
-void _populatePreprocessedIntervals (preprocessedIntervals_t *preprocessedIntervals, size_t depth, size_t id) {
-  size_t nextId = id * N_NUCLEOTIDES + 1;
-  ++depth;
-  for (unsigned int nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-    bwt_2occ(bwt, preprocessedIntervals->intervals[id].interval.k, preprocessedIntervals->intervals[id].interval.l, nucleotide, &preprocessedIntervals->intervals[nextId].interval.k, &preprocessedIntervals->intervals[nextId].interval.l);
-    preprocessedIntervals->intervals[nextId].interval.k = bwt->L2[nucleotide] + preprocessedIntervals->intervals[nextId].interval.k + 1;
-    preprocessedIntervals->intervals[nextId].interval.l = bwt->L2[nucleotide] + preprocessedIntervals->intervals[nextId].interval.l;
-    if ((preprocessedIntervals->intervals[nextId].interval.k <= preprocessedIntervals->intervals[nextId].interval.l) && (depth < PREPROCESSED_DEPTH)) {
-      _populatePreprocessedIntervals(preprocessedIntervals, depth, nextId);
-      //printf("id: %zu\n", nextId);
-    }
-    ++nextId;
-    //printf("  %c: %" PRIu64 "-%" PRIu64 "...\n", "ACGT"[nucleotide], preprocessedFreeState->interval.k, preprocessedFreeState->interval.l);
-  }
-}
-
-void populatePreprocessedIntervals (preprocessedIntervals_t *preprocessedIntervals) {
-  //nIntervals = 0;
-  printf("Pre-processing %zu intervals...\n", preprocessedIntervals->nIntervals);
-  preprocessedIntervals->intervals[0].interval.k = 0;
-  preprocessedIntervals->intervals[0].interval.l = bwt->bwt_size;
-  _populatePreprocessedIntervals(preprocessedIntervals, 0, 0);
-  //printf("#intervals used: %lu\n", nIntervals);
-  puts("... done.");
-}
 
 /******* State type *******/
 /**
@@ -1032,16 +984,12 @@ void populatePreprocessedIntervals (preprocessedIntervals_t *preprocessedInterva
 typedef struct state_t state_t;
 
 struct state_t {
-  union {
-    bwtinterval_t interval;
-    preprocessedInterval_t *preprocessedInterval;
-  };
+  bwtinterval_t interval;
   unsigned char trace;
   struct state_t *previousState;
 };
 
 bwtinterval_t *getStateInterval (state_t *state) {
-  if (state->trace & PREPROCESSED) return &state->preprocessedInterval->interval;
   return &state->interval;
 }
 
@@ -1105,25 +1053,11 @@ typedef struct {
   size_t *minErrors;
   size_t *maxErrors;
   size_t treeSize;
-  preprocessedIntervals_t *preprocessedIntervals;
 } states_t;
 
-bool goDownBwt (const states_t *states, state_t *previousState, unsigned short nucleotide, state_t *newState) {
+bool goDownBwt (state_t *previousState, unsigned short nucleotide, state_t *newState) {
   ++stats->nDown;
   //printf("    Going down BWT from range %" PRId64 "-%" PRIu64 " and nt %hu, preprocessed: %s\n", getStateInterval(previousState)->k, getStateInterval(previousState)->l, nucleotide, (previousState->trace & PREPROCESSED)? "true": "false");
-  if (previousState->trace & PREPROCESSED) {
-    size_t nextId = (previousState->preprocessedInterval - states->preprocessedIntervals->intervals) * N_NUCLEOTIDES + nucleotide + 1;
-    //printf("      preprocessed next id should be %zu -> %zu (%" PRIu64 "-%" PRIu64 ")\n", previousState->preprocessedInterval - states->preprocessedIntervals->intervals, nextId, states->preprocessedIntervals->intervals[nextId].interval.k, states->preprocessedIntervals->intervals[nextId].interval.l);
-    if (nextId < states->preprocessedIntervals->nIntervals) {
-      //printf("      ok\n");
-      ++stats->nDownPreprocessed;
-      //printf("      first case\n");
-      newState->preprocessedInterval = &states->preprocessedIntervals->intervals[nextId];
-      newState->trace                = PREPROCESSED;
-      //if (newState->preprocessedInterval->interval.k <= newState->preprocessedInterval->interval.l) printf("      ok!\n");
-      return (newState->preprocessedInterval->interval.k <= newState->preprocessedInterval->interval.l);
-    }
-  }
   bwt_2occ(bwt, getStateInterval(previousState)->k-1, getStateInterval(previousState)->l, nucleotide, &newState->interval.k, &newState->interval.l);
   newState->interval.k = bwt->L2[nucleotide] + newState->interval.k + 1;
   newState->interval.l = bwt->L2[nucleotide] + newState->interval.l;
@@ -1224,13 +1158,7 @@ states_t *initializeStates(size_t treeSize) {
       states->states[depth][nErrors] = (state_t *) malloc(N_STATES * sizeof(states_t));
     }
   }
-  preprocessedIntervals_t *preprocessedIntervals = initializePreprocessedStates();
-  populatePreprocessedIntervals(preprocessedIntervals);
-  states->preprocessedIntervals = preprocessedIntervals;
-  state_t baseState;
-  baseState.preprocessedInterval = &preprocessedIntervals->intervals[0];
-  baseState.trace                = PREPROCESSED;
-  baseState.previousState        = NULL;
+  state_t baseState = { { 0, bwt->seq_len }, 0, NULL };
   addState(states, 0, 0, &baseState);
   return states;
 }
@@ -1262,7 +1190,6 @@ void freeStates(states_t *states) {
   free(states->nStatesPerPosition);
   free(states->minErrors);
   free(states->maxErrors);
-  freePreprocessedStates(states->preprocessedIntervals);
   free(states);
 }
 
@@ -1319,6 +1246,7 @@ void addMiss (shortCut_t *shortCut) {
  *   - the tree depth
  *   - the corresponding read
  *   - the index of the next char to be written for the read (not the one you want to change when you change the branch)
+ *   - nCells is actually the index of the last used cellId
  */
 
 typedef struct {
@@ -1327,7 +1255,7 @@ typedef struct {
   size_t          nCells;
   size_t          maxDepth;
   size_t          depth;
-  edge_t          edge;
+  edge_t         *edges;
   size_t          edgeLength;
   char           *read;
   size_t          readPos;
@@ -1341,24 +1269,23 @@ void printPath (path_t *path) {
     assert(path->nucleotides[i] < N_NUCLEOTIDES);
     printf("%c ", "ACGT"[(int) path->nucleotides[i]]);
   }
-  printf("(depth: %zu, # cells: %zu, read pos: %zu, cellId: %" PRIu64 ")\n", path->depth, path->nCells, path->readPos, (path->nCells == 0)? (uint64_t) -1: path->cellIds[path->nCells-1]); fflush(stdout);
+  printf("(depth: %zu, # cells: %zu, read pos: %zu, cellId: %" PRIu64 ")\n", path->depth, path->nCells, path->readPos, path->cellIds[path->nCells-1]); fflush(stdout);
 }
 
 path_t *initializePath (size_t maxDepth) {
   path_t *path         = (path_t *)         malloc(sizeof(path_t));
   path->nucleotides    = (unsigned short *) malloc(maxDepth * sizeof(unsigned short));
   path->cellIds        = (uint64_t *)       malloc((maxDepth+1) * sizeof(uint64_t));
+  path->edges          = (edge_t *)         malloc((maxDepth+1) * sizeof(edge_t));
   path->nCells         = 0;
   path->read           = (char *)           malloc((maxDepth+1) * sizeof(char));
   path->maxDepth       = maxDepth;
   path->depth          = 0;
-  path->edge.length    = 0;
   path->edgeLength     = 0;
   path->cellIds[0]     = 0;
   path->read[maxDepth] = 0;
   path->readPos        = maxDepth;
   path->shortCut       = initializeShortCut();
-  path->cellIds[0]     = 0;
   return path;
 }
 
@@ -1369,7 +1296,7 @@ void freePath (path_t *path) {
   free(path);
 }
 
-void appendNucleotideTree (path_t *path, short nucleotide, char c) {
+void appendNucleotidePath (path_t *path, short nucleotide, char c) {
   path->nucleotides[path->depth] = nucleotide;
   ++path->depth;
   --path->readPos;
@@ -1380,9 +1307,9 @@ void appendNucleotideTree (path_t *path, short nucleotide, char c) {
  * Step into the last cells of the tree in a DFS fashion.
  */
 bool goDownTreeBase (path_t *path) {
-  uint64_t cellId = path->cellIds[path->nCells] << NUCLEOTIDES_BITS;
-  appendNucleotideTree(path, 0, 'A');
-  path->cellIds[path->nCells++] = cellId;
+  appendNucleotidePath(path, 0, 'A');
+  path->cellIds[path->nCells+1] = path->cellIds[path->nCells] << NUCLEOTIDES_BITS;
+  ++path->nCells;
   return true;
 }
 
@@ -1392,26 +1319,30 @@ bool goDownTreeBase (path_t *path) {
 bool goDownTreeNotBase (const tree_t *tree, path_t *path) {
   edge_t *edge = NULL;
   unsigned short nucleotide;
+  printPath(path);
+  assert(path->depth < tree->depth);
+  assert(path->nCells < tree->depth);
   if (path->edgeLength == 0) {
     cell_t *cell = &tree->cells[path->cellIds[path->nCells]];
     for (nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
       edge = &cell->edges[nucleotide];
       if (isSetEdge(edge)) {
-        path->edge       = *edge;
-        path->edgeLength = 1;
-        appendNucleotideTree(path, nucleotide, DNA5_TO_CHAR[nucleotide]);
+        path->edges[path->nCells] = *edge;
+        path->edgeLength          = 1;
+        appendNucleotidePath(path, nucleotide, DNA5_TO_CHAR[nucleotide]);
         //printf("to %zu with read '%s'\n", path->depth, path->read+path->readPos);
         return true;
       }
     }
     return false;
   }
-  nucleotide = getEdgeNucleotide(&path->edge, path->edgeLength);
+  edge = &path->edges[path->nCells];
+  nucleotide = getEdgeNucleotide(edge, path->edgeLength);
   ++path->edgeLength;
-  appendNucleotideTree(path, nucleotide, DNA5_TO_CHAR[nucleotide]);
-  if (path->edgeLength == path->edge.length) {
+  appendNucleotidePath(path, nucleotide, DNA5_TO_CHAR[nucleotide]);
+  if (path->edgeLength == edge->length) {
     path->edgeLength = 0;
-    path->cellIds[path->nCells++] = path->edge.cellId;
+    path->cellIds[++path->nCells] = edge->cellId;
   }
   return true;
 }
@@ -1440,14 +1371,19 @@ bool goRightTreeBase (path_t *path) {
   if (nextCellId == (1u << NUCLEOTIDES_BITS * path->depth)) {
     return false;
   }
-  //TODO: modify everything instead!
+  //TODO modify everything instead!
   for (unsigned int offset = 0; (cellId & mask) != (nextCellId & mask); ++offset, mask <<= NUCLEOTIDES_BITS) {
     newNucleotide = ((nextCellId & mask) >> (NUCLEOTIDES_BITS * offset));
     //printf("      Offset: %u, mask: %" PRIu64 ", new char: %c\n", offset, mask, DNA5_TO_CHAR[newNucleotide]);
-    path->read[path->readPos+offset+1] = DNA5_TO_CHAR[newNucleotide];
-    path->nucleotides[path->depth-offset-1] = newNucleotide;
+    --path->depth;
+    ++path->readPos;
+    path->read[path->readPos] = DNA5_TO_CHAR[newNucleotide];
+    path->nucleotides[path->depth] = newNucleotide;
   }
   path->cellIds[path->nCells] = nextCellId;
+  ++path->depth;
+  --path->readPos;
+  path->nCells = path->depth;
   //printf("      Leaving base will cell %" PRIu64 ", nucleotide %c\n", path->cellIds[path->nCells], "ACGT"[newNucleotide]);
   return true;
 }
@@ -1456,31 +1392,35 @@ bool goRightTreeBase (path_t *path) {
  * Step into the first cells of the tree in a BFS fashion.
  */
 bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
-  uint64_t cellId;
-  cell_t *cell;
-  //printf("    not base\n");
+  edge_t *edge;
+  printf("    not base\n");
   while (true) {
     if (path->depth <= TREE_BASE_SIZE) {
       return goRightTreeBase(path);
     }
-    --path->depth;
-    ++path->readPos;
-    //printf("    ... trying depth %zu\n", path->depth);
+    printf("    ... trying depth %zu, # cell %zu, edge len %zu\n", path->depth, path->nCells, path->edgeLength);
+    assert(path->depth >= path->edgeLength);
+    path->depth   -= path->edgeLength;
+    path->readPos += path->edgeLength;
     for (size_t nucleotide = path->nucleotides[path->depth]+1; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-      cell = &tree->cells[path->cellIds[path->nCells]];
-      //printf("      ... nucleotide is %zu, cell is %" PRIu64 "\n", nucleotide, cell->children[nucleotide]); 
-      if ((cellId = cell->edges[nucleotide].cellId) != NO_DATA) {
-        path->nucleotides[path->depth] = nucleotide;
+      printf("    ... trying nucleotide %c\n", "ACGTN"[nucleotide]);
+      edge = &tree->cells[path->cellIds[path->nCells]].edges[nucleotide];
+      printf("    ... edge ");
+      printEdge(edge);
+      if (isSetEdge(edge)) {
         ++path->depth;
         --path->readPos;
-        path->cellIds[path->nCells] = cellId;
         path->read[path->readPos] = DNA5_TO_CHAR[nucleotide];
-        //printf("    ... going to %zu with read '%s'\n", path->depth, path->read+path->readPos);
+        path->nucleotides[path->depth] = nucleotide;
+        path->edges[path->nCells] = *edge;
+        path->edgeLength = 1;
         return true;
       }
     }
+    --path->nCells;
+    path->edgeLength = path->edges[path->nCells].length;
   }
-  //printf("    ... going to nothing\n");
+  printf("    ... going to nothing\n");
   return false;
 }
 
@@ -1489,7 +1429,7 @@ bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
  * Return false if search is exhausted.
  */
 bool goRightTree (const tree_t *tree, path_t *path) {
-  //printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
+  printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
   unsetShortCut(path->shortCut);
   if (path->depth > TREE_BASE_SIZE) {
     return goRightTreeNotBase(tree, path);
@@ -1668,7 +1608,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]);
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
     previousState = &states->states[depth-1][nErrors][stateId];
-    if (goDownBwt(states, previousState, nt, &nextState)) {
+    if (goDownBwt(previousState, nt, &nextState)) {
       mapFound = true;
       nextState.trace        |= MATCH;
       nextState.previousState = previousState;
@@ -1708,7 +1648,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
       return false;
     }
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-      if (goDownBwt(states, &state, nt, newState)) {
+      if (goDownBwt(&state, nt, newState)) {
         //addState(states, depth-1, nErrors, &newState);
         if (nt != path->nucleotides[depth-1]) {
           //printState(newState, path->maxDepth);
@@ -1725,7 +1665,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
   for (size_t stateId = 0; stateId < states->nStates[depth][nErrors-1]; ++stateId) {
     state_t *state = &states->states[depth][nErrors-1][stateId];
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-      if (goDownBwt(states, state, nt, newState)) {
+      if (goDownBwt(state, nt, newState)) {
         newState->trace        |= DELETION | nt;
         newState->previousState = state;
         if (! addState(states, depth, nErrors, newState)) {
