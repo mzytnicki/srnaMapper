@@ -347,7 +347,7 @@ void edgeSetCellId (edge_t *edge, uint64_t cellId) {
 }
 
 void printEdge (edge_t *edge) {
-  printf("%u -> %" PRIu64, edge->sequence, edge->cellId);
+  printf("-%u (%u)-> %" PRIu64, edge->sequence, edge->length, edge->cellId);
 }
 
 /******* Cell type *******/
@@ -1263,13 +1263,21 @@ typedef struct {
 } path_t;
 
 void printPath (path_t *path) {
-  assert(path->depth < path->maxDepth);
+  assert(path->depth <= path->maxDepth);
   printf("\t\t\t\t");
   for (size_t i = 0; i < path->depth; ++i) {
     assert(path->nucleotides[i] < N_NUCLEOTIDES);
     printf("%c ", "ACGT"[(int) path->nucleotides[i]]);
   }
-  printf("(depth: %zu, # cells: %zu, read pos: %zu, cellId: %" PRIu64 ")\n", path->depth, path->nCells, path->readPos, path->cellIds[path->nCells-1]); fflush(stdout);
+  printf("\n\t\t\t\t");
+  for (size_t i = 0; i <= path->nCells; ++i) {
+    printf("%" PRIu64 " ", path->cellIds[i]);
+    if (i >= TREE_BASE_SIZE) {
+      printEdge(&path->edges[i]);
+    }
+    printf("  ");
+  }
+  printf("\n\t\t\t\t(depth: %zu, # cells: %zu, read pos: %zu, cellId: %" PRIu64 ")\n", path->depth, path->nCells, path->readPos, path->cellIds[path->nCells-1]); fflush(stdout);
 }
 
 path_t *initializePath (size_t maxDepth) {
@@ -1320,8 +1328,8 @@ bool goDownTreeNotBase (const tree_t *tree, path_t *path) {
   edge_t *edge = NULL;
   unsigned short nucleotide;
   printPath(path);
-  assert(path->depth < tree->depth);
-  assert(path->nCells < tree->depth);
+  assert(path->depth <= tree->depth);
+  assert(path->nCells <= tree->depth);
   if (path->edgeLength == 0) {
     cell_t *cell = &tree->cells[path->cellIds[path->nCells]];
     for (nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
@@ -1367,16 +1375,16 @@ bool goRightTreeBase (path_t *path) {
   uint64_t cellId = path->cellIds[path->nCells], nextCellId = cellId + 1, mask = NUCLEOTIDE_MASK;
   unsigned short newNucleotide = 0;
   assert(path->depth <= TREE_BASE_SIZE);
-  //printf("    Entering go right base will cell %" PRIu64 " at depth %zu and read pos %zu\n", cellId, path->depth, path->readPos);
+  printf("    Entering go right base will cell %" PRIu64 " at depth %zu and read pos %zu\n", cellId, path->depth, path->readPos);
   if (nextCellId == (1u << NUCLEOTIDES_BITS * path->depth)) {
     return false;
   }
   //TODO modify everything instead!
   for (unsigned int offset = 0; (cellId & mask) != (nextCellId & mask); ++offset, mask <<= NUCLEOTIDES_BITS) {
     newNucleotide = ((nextCellId & mask) >> (NUCLEOTIDES_BITS * offset));
-    //printf("      Offset: %u, mask: %" PRIu64 ", new char: %c\n", offset, mask, DNA5_TO_CHAR[newNucleotide]);
     --path->depth;
     ++path->readPos;
+    printf("      Offset: %u, mask: %" PRIu64 ", depth: %zu, new char: %c\n", offset, mask, path->depth, DNA5_TO_CHAR[newNucleotide]);
     path->read[path->readPos] = DNA5_TO_CHAR[newNucleotide];
     path->nucleotides[path->depth] = newNucleotide;
   }
@@ -1384,7 +1392,7 @@ bool goRightTreeBase (path_t *path) {
   ++path->depth;
   --path->readPos;
   path->nCells = path->depth;
-  //printf("      Leaving base will cell %" PRIu64 ", nucleotide %c\n", path->cellIds[path->nCells], "ACGT"[newNucleotide]);
+  printf("      Leaving base will cell %" PRIu64 ", nucleotide %c\n", path->cellIds[path->nCells], "ACGT"[newNucleotide]);
   return true;
 }
 
