@@ -1385,6 +1385,7 @@ bool goRightTreeBase (path_t *path) {
   --path->readPos;
   path->nCells = path->depth;
   //printf("      Leaving base will cell %" PRIu64 ", nucleotide %c\n", path->cellIds[path->nCells], "ACGT"[newNucleotide]);
+  path->edgeLength = 0;
   return true;
 }
 
@@ -1408,6 +1409,7 @@ bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
       edge = &tree->cells[path->cellIds[path->nCells]].edges[nucleotide];
       printf("    ... edge ");
       printEdge(edge);
+      printf("\n");
       if (isSetEdge(edge)) {
         ++path->depth;
         --path->readPos;
