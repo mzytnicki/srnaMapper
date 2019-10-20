@@ -347,7 +347,15 @@ void edgeSetCellId (edge_t *edge, uint64_t cellId) {
 }
 
 void printEdge (edge_t *edge) {
-  printf("-%u (%u)-> %" PRIu64, edge->sequence, edge->length, edge->cellId);
+  if (! isSetEdge(edge)) {
+    printf("-X->");
+    return;
+  }
+  printf("-");
+  for (unsigned int i = 0; i < edge->length; ++i) {
+    printf("%c", "ACGT"[(edge->sequence >> (NUCLEOTIDES_BITS * i)) & NUCLEOTIDE_MASK]);
+  }
+  printf("-> %" PRIu64, edge->cellId);
 }
 
 /******* Cell type *******/
@@ -1272,7 +1280,7 @@ void printPath (path_t *path) {
   printf("\n\t\t\t\t");
   for (size_t i = 0; i <= path->nCells; ++i) {
     printf("%" PRIu64 " ", path->cellIds[i]);
-    if (i >= TREE_BASE_SIZE) {
+    if (i > TREE_BASE_SIZE) {
       printEdge(&path->edges[i]);
     }
     printf("  ");
