@@ -419,6 +419,7 @@ void printCell (cell_t *cell) {
   for (unsigned short i = 0; i < N_NUCLEOTIDES; ++i) {
     if (isSetEdge(&cell->edges[i])) {
       printEdge(&cell->edges[i]);
+      printf("  ");
     }
   }
 }
@@ -875,37 +876,36 @@ int readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
 /**
  * Count the 3-mer, and possibly filter
  */
-bool __filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned short triplet, count_t *tripletCount) {
+bool __filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned short prevTriplet, count_t *prevTripletCount) {
   edge_t *edge;
   uint64_t nextCellId;
   bool foundRead = false;
   bool thresholdReached = false;
   cell_t *cell = &tree->cells[cellId];
-  count_t prevTripletCount [N_TRIPLETS];
-  unsigned short prevTriplet = triplet;
+  count_t tripletCount [N_TRIPLETS];
+  unsigned short triplet;
   size_t prevReadPos = readPos;
   unsigned short nucleotide;
-  memcpy(prevTripletCount, tripletCount, N_TRIPLETS * sizeof(count_t));
+  //printf("\tCurrent triplet: %u @ readPos: %zu\n", prevTriplet, readPos);
   if (findQuality(&tree->qualities, cellId) != NULL) {
     foundRead = true;
   }
   for (unsigned short edgeId = 0; edgeId < N_NUCLEOTIDES; ++edgeId) {
-    thresholdReached = false;
-    memcpy(tripletCount, prevTripletCount, N_TRIPLETS * sizeof(count_t));
-    triplet = prevTriplet;
-    readPos = prevReadPos;
     edge = &cell->edges[edgeId];
     nextCellId = edge->cellId;
-    //printf("Current triplet: %u @ readPos: %zu\n", triplet, readPos);
+    //printf("\t\tTrying nucleotide %i\n", edgeId);
     if (nextCellId != NO_DATA) {
-      for (size_t edgeLength = 0; edgeLength < edge->length; ++edgeLength, ++readPos) {
+      thresholdReached = false;
+      triplet = prevTriplet;
+      memcpy(tripletCount, prevTripletCount, N_TRIPLETS * sizeof(count_t));
+      readPos = prevReadPos;
+      for (size_t edgeLength = 0; (edgeLength < edge->length) && (! thresholdReached); ++edgeLength, ++readPos) {
         nucleotide = getEdgeNucleotide(edge, edgeLength);
-        triplet &= TRIPLET_MASK;
-        triplet <<= NUCLEOTIDES_BITS;
-        triplet = triplet | nucleotide;
-        //printf("  triplet: %u @ length: %zu, nucleotide: %i\n", triplet, edgeLength, nucleotide);
+        triplet = ((triplet & TRIPLET_MASK) << NUCLEOTIDES_BITS) | nucleotide;
+        //printf("\t\t\ttriplet: %u @ edgelen: %zu, nucleotide: %i\n", triplet, edgeLength, nucleotide);
         if (readPos >= TRIPLET-1) tripletCount[triplet] += 1;
         if (tripletCount[triplet] > parameters->lowComplexityThreshold) {
+          //printf("\t\t\t\tDirect filtering\n");
           thresholdReached = true;
         }
      }
@@ -913,7 +913,8 @@ bool __filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned
         unsetEdge(edge);
       }
       else {
-        if (! __filterTree(tree, readPos, nextCellId, triplet, tripletCount)) {
+        if (! __filterTree(tree, readPos+1, nextCellId, triplet, tripletCount)) {
+          //printf("\t\tSecond filtering @ %zu\n", readPos);
           unsetEdge(edge);
         }
         else {
@@ -939,8 +940,9 @@ bool _filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned 
   triplet <<= NUCLEOTIDES_BITS;
   for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
     nextTriplet = triplet | nucleotide;
+    //printf("\tFirst filter @ %zu with nt %i and triplet %i\n", readPos, nucleotide, triplet);
     if (readPos >= TRIPLET-1) tripletCount[nextTriplet] += 1;
-    if (_filterTree(tree, readPos+1, cellId + nucleotide, nextTriplet, tripletCount)) {
+    if (_filterTree(tree, readPos+1, cellId | nucleotide, nextTriplet, tripletCount)) {
       foundRead = true;
     }
     if (readPos >= TRIPLET-1) tripletCount[nextTriplet] -= 1;
@@ -1278,12 +1280,11 @@ typedef struct {
 
 void printPath (path_t *path) {
   assert(path->depth <= path->maxDepth);
-  printf("\t\t\t\t");
   for (size_t i = 0; i < path->depth; ++i) {
     assert(path->nucleotides[i] < N_NUCLEOTIDES);
     printf("%c ", "ACGT"[(int) path->nucleotides[i]]);
   }
-  printf("\n\t\t\t\t");
+  printf("\n");
   for (size_t i = 0; i <= path->nCells; ++i) {
     printf("%" PRIu64 " ", path->cellIds[i]);
     if ((i >= TREE_BASE_SIZE) && (i < path->nCells)) {
@@ -1291,7 +1292,7 @@ void printPath (path_t *path) {
     }
     printf("  ");
   }
-  printf("\n\t\t\t\t(depth: %zu, # cells: %zu, read pos: %zu, cellId: %" PRIu64 ", edge length: %zu)\n", path->depth, path->nCells, path->readPos, path->cellIds[path->nCells], path->edgeLength); fflush(stdout);
+  printf("\n(depth: %zu, # cells: %zu, read pos: %zu, cellId: %" PRIu64 ", edge length: %zu)\n", path->depth, path->nCells, path->readPos, path->cellIds[path->nCells], path->edgeLength); fflush(stdout);
 }
 
 path_t *initializePath (size_t maxDepth) {
@@ -1330,7 +1331,7 @@ void appendNucleotidePath (path_t *path, short nucleotide, char c) {
  * Step into the last cells of the tree in a DFS fashion.
  */
 bool goDownTreeBase (path_t *path) {
-  printf("\t\tGoing to base\n");
+  //printf("\t\tGoing to base\n");
   appendNucleotidePath(path, 0, 'A');
   path->cellIds[path->nCells+1] = path->cellIds[path->nCells] << NUCLEOTIDES_BITS;
   ++path->nCells;
@@ -1341,10 +1342,10 @@ bool goDownTreeBase (path_t *path) {
  * Step into the first cells of the tree in a DFS fashion.
  */
 bool goDownTreeNotBase (const tree_t *tree, path_t *path) {
-  printf("\t\tGoing to tree\n");
+  //printf("\t\tGoing to tree\n");
   edge_t *edge = NULL;
   unsigned short nucleotide;
-  printPath(path);
+  //printPath(path);
   assert(path->depth <= tree->depth);
   assert(path->nCells <= tree->depth);
   if (path->edgeLength == 0) {
@@ -1363,7 +1364,7 @@ bool goDownTreeNotBase (const tree_t *tree, path_t *path) {
         return true;
       }
     }
-    printf("\t\t\tNothing found\n");
+    //printf("\t\t\tNothing found\n");
     return false;
   }
   edge = &path->edges[path->nCells];
@@ -1382,7 +1383,7 @@ bool goDownTreeNotBase (const tree_t *tree, path_t *path) {
  * Return false if search is exhausted.
  */
 bool goDownTree (const tree_t *tree, path_t *path) {
-  printf("\tGo down from height %zu with read '%s'\n", path->depth, path->read+path->readPos);
+  //printf("\tGo down from height %zu with read '%s'\n", path->depth, path->read+path->readPos);
   if (path->depth < TREE_BASE_SIZE) {
     return goDownTreeBase(path);
   }
@@ -1398,20 +1399,20 @@ bool goRightTreeBase (path_t *path) {
   unsigned short newNucleotide = 0;
   assert(path->depth == TREE_BASE_SIZE);
   assert(path->nCells == TREE_BASE_SIZE);
-  printf("    Entering go right base will cell %" PRIu64 " at depth %zu and read pos %zu\n", cellId, path->depth, path->readPos);
+  //printf("    Entering go right base will cell %" PRIu64 " at depth %zu and read pos %zu\n", cellId, path->depth, path->readPos);
   if (nextCellId == (1u << NUCLEOTIDES_BITS * path->depth)) {
     return false;
   }
   //TODO modify everything instead!
   for (unsigned int offset = 0; (cellId & mask) != (nextCellId & mask); ++offset, mask <<= NUCLEOTIDES_BITS) {
     newNucleotide = ((nextCellId & mask) >> (NUCLEOTIDES_BITS * offset));
-    printf("      Offset: %u, mask: %" PRIu64 ", depth: %zu, new char: %c\n", offset, mask, path->depth, DNA5_TO_CHAR[newNucleotide]);
+    //printf("      Offset: %u, mask: %" PRIu64 ", depth: %zu, new char: %c\n", offset, mask, path->depth, DNA5_TO_CHAR[newNucleotide]);
     path->read[path->readPos+offset] = DNA5_TO_CHAR[newNucleotide];
     path->nucleotides[path->depth-offset-1] = newNucleotide;
   }
   path->nCells = path->depth;
   path->cellIds[path->nCells] = nextCellId;
-  printf("      Leaving base will cell %" PRIu64 ", nucleotide %c, read %s\n", path->cellIds[path->nCells], "ACGT"[newNucleotide], path->read + path->readPos);
+  //printf("      Leaving base will cell %" PRIu64 ", nucleotide %c, read %s\n", path->cellIds[path->nCells], "ACGT"[newNucleotide], path->read + path->readPos);
   path->edgeLength = 0;
   return true;
 }
@@ -1423,13 +1424,13 @@ bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
   assert(path->depth <= path->maxDepth);
   assert(path->nCells <= path->maxDepth);
   edge_t *edge;
-  printf("    not base\n");
+  //printf("    not base\n");
   while (true) {
     if (path->depth <= TREE_BASE_SIZE) {
       ++path->nCells;
       return goRightTreeBase(path);
     }
-    printf("    ... trying depth %zu, # cell %zu, edge len %zu\n", path->depth, path->nCells, path->edgeLength);
+    //printf("    ... trying depth %zu, # cell %zu, edge len %zu\n", path->depth, path->nCells, path->edgeLength);
     assert(path->depth >= path->edgeLength);
     if (path->edgeLength == 0) {
       --path->nCells;
@@ -1440,11 +1441,11 @@ bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
     assert(path->depth < path->maxDepth);
     assert(tree->cells[path->cellIds[path->nCells]].edges[path->nucleotides[path->depth]].cellId == path->edges[path->nCells].cellId);
     for (size_t nucleotide = path->nucleotides[path->depth]+1; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-      printf("    ... trying nucleotide %c\n", "ACGTN"[nucleotide]);
+      //printf("    ... trying nucleotide %c\n", "ACGTN"[nucleotide]);
       edge = &tree->cells[path->cellIds[path->nCells]].edges[nucleotide];
-      printf("    ... edge ");
-      printEdge(edge);
-      printf("\n");
+      //printf("    ... edge ");
+      //printEdge(edge);
+      //printf("\n");
       if (isSetEdge(edge)) {
         path->nucleotides[path->depth] = nucleotide;
         ++path->depth;
@@ -1462,7 +1463,7 @@ bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
     --path->nCells;
     path->edgeLength = path->edges[path->nCells].length;
   }
-  printf("    ... going to nothing\n");
+  //printf("    ... going to nothing\n");
   return false;
 }
 
@@ -1471,7 +1472,7 @@ bool goRightTreeNotBase (const tree_t *tree, path_t *path) {
  * Return false if search is exhausted.
  */
 bool goRightTree (const tree_t *tree, path_t *path) {
-  printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
+  //printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
   unsetShortCut(path->shortCut);
   if (path->depth > TREE_BASE_SIZE) {
     return goRightTreeNotBase(tree, path);
@@ -1483,20 +1484,20 @@ bool goRightTree (const tree_t *tree, path_t *path) {
  * Go to next child node in reads tree.  If none, go to sibling
  */
 bool goNextTree (const tree_t *tree, states_t *states, path_t *path, bool mappable) {
-  printf("  Goto next\n");
+  //printf("  Goto next\n");
   if (mappable) {
-    printf("    Mappable\n");
+    //printf("    Mappable\n");
     if (goDownTree(tree, path)) {
       return true;
     }
   }
-  printf("  Going right\n");
-  printStates(states, path->depth);
+  //printf("  Going right\n");
+  //printStates(states, path->depth);
   if (! goRightTree(tree, path)) {
     return false;
   }
-  printf("  Now\n");
-  printStates(states, path->depth);
+  //printf("  Now\n");
+  //printStates(states, path->depth);
   backtrackStates(states, path->depth);
   return true;
 }
@@ -1560,8 +1561,8 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   unsigned int nErrors = states->minErrors[depth];
   size_t nStates = states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
   state_t *theseStates = states->states[depth][nErrors];
-  printf("Printing read\n");
-  printPath(path);
+  //printf("Printing read\n");
+  //printPath(path);
   writeQname(qname, counts);
   for (size_t i = 0; i < nStates; ++i) {
     nHits += theseStates[i].interval.l - theseStates[i].interval.k + 1;
@@ -1649,7 +1650,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   state_t *previousState;
   state_t nextState;
   bool mapFound = false;
-  printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]);
+  //printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]);
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
     previousState = &states->states[depth-1][nErrors][stateId];
     if (goDownBwt(previousState, nt, &nextState)) {
@@ -1673,10 +1674,10 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
  * Supposes that mappings at depth with nErrors-1 are computed.
  */
 bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, state_t *newState) {
-  printf("    depth %zu, %zu errors, nucleotide %c, %zu states, min errors: %zu\n", depth, nErrors, "ACGT"[path->nucleotides[depth-1]],  states->nStates[depth-1][nErrors-1], states->minErrors[depth-1]);
-  printf("      Path is: ");
-  for (size_t i = 0; i < depth; ++i) putchar("ACGT"[path->nucleotides[i]]);
-  putchar('\n');
+  //printf("    depth %zu, %zu errors, nucleotide %c, %zu states, min errors: %zu\n", depth, nErrors, "ACGT"[path->nucleotides[depth-1]],  states->nStates[depth-1][nErrors-1], states->minErrors[depth-1]);
+  //printf("      Path is: ");
+  //for (size_t i = 0; i < depth; ++i) putchar("ACGT"[path->nucleotides[i]]);
+  //putchar('\n');
   //TODO may be skipped?
   if ((states->maxErrors[depth] != SIZE_MAX) && (states->maxErrors[depth] >= nErrors)) {
     //printf("      first case: %zu/%zu/%zu %zu/%i\n", states->maxErrors[depth], nErrors, SIZE_MAX, states->nStates[depth][nErrors], N_STATES);
@@ -1851,27 +1852,27 @@ void printProgress(path_t *path) {
  * We are looking for the corresponding mappings at the path->depth level.
  */
 bool findBestMapping (states_t *states, path_t *path) {
-  printf("Finding best mapping\n");
-  printPath(path);
-  printStates(states, path->depth);
-  printf("\t\t\t\tRead: %s\n", path->read + path->readPos);
-  for (size_t i = 0; i < states->nStates[path->depth-1][states->minErrors[path->depth-1]]; ++i) { printState(&states->states[path->depth-1][states->minErrors[path->depth-1]][i], path->maxDepth); }
+  //printf("Finding best mapping\n");
+  //printPath(path);
+  //printStates(states, path->depth);
+  //printf("\t\t\t\tRead: %s\n", path->read + path->readPos);
+  //for (size_t i = 0; i < states->nStates[path->depth-1][states->minErrors[path->depth-1]]; ++i) { printState(&states->states[path->depth-1][states->minErrors[path->depth-1]][i], path->maxDepth); }
   printProgress(path);
   if (path->depth <= TREE_BASE_SIZE) {
-    printf("  with errors\n");
+    //printf("  with errors\n");
     mapWithErrors(states, path);
     return true;
   }
   if (mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1])) {
-    printf("    ... without error\n");
+    //printf("    ... without error\n");
     return true;
   }
-  printf("    # errors: %zu/%zu\n", states->minErrors[path->depth-1], parameters->maxNErrors);
+  //printf("    # errors: %zu/%zu\n", states->minErrors[path->depth-1], parameters->maxNErrors);
   if (states->minErrors[path->depth-1] >= parameters->maxNErrors) {
-    printf("    ... exiting\n");
+    //printf("    ... exiting\n");
     return false;
   }
-  printf("    ... adding error\n");
+  //printf("    ... adding error\n");
   return addError(states, path);
 }
 
@@ -1886,10 +1887,13 @@ void _map (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFi
     if (! goNextTree(tree, states, path, mappable)) {
       return;
     }
+    //printPath(path);
+    //printf("%" PRIu64 ": ", path->cellIds[path->nCells]);
     //printCell(&tree->cells[path->cellIds[path->nCells]]);
+    //printf("\n");
     // prefix of the read is not mappable
     mappable = findBestMapping(states, path);
-    printf("\tRead is mappable: %s\n", (mappable)? "yes": "no");
+    //printf("\tRead is mappable: %s\n", (mappable)? "yes": "no");
     if ((path->depth >= TREE_BASE_SIZE) && (mappable)) {
       if ((quality = findQuality(&tree->qualities, path->cellIds[path->nCells])) != NULL) {
         printRead(states, path, quality, tree->cells[path->cellIds[path->nCells]].counts, outputSamFile);
@@ -1912,7 +1916,7 @@ void _map (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFi
 void map (const tree_t *tree, FILE *outputSamFile) {
   states_t *states = initializeStates(tree->depth);
   path_t   *path   = initializePath(tree->depth);
-  printf("depth: %zu\n", tree->depth);
+  //printf("depth: %zu\n", tree->depth);
   //addState(&states, 0, 0, firstState);
   //goDownTree(tree, &path);
   _map(tree, states, path, outputSamFile);
