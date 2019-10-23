@@ -1781,7 +1781,7 @@ void mapWithErrors (states_t *states, path_t *path) {
   //printStates(states, path->depth-1);
   //printPath(path);
   //TODO check this
-  if (path->maxDepth == TREE_BASE_SIZE) {
+  if (path->depth == TREE_BASE_SIZE) {
     for (size_t nErrors = states->minErrors[TREE_BASE_SIZE]; nErrors <= states->maxErrors[N_TREE_BASE]; ++nErrors) {
       states->nStates[TREE_BASE_SIZE][nErrors] = simplifyStates(states->states[TREE_BASE_SIZE][nErrors], states->nStates[TREE_BASE_SIZE][nErrors]);
     }
