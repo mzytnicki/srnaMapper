@@ -1725,9 +1725,12 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
       return false;
     }
   }
+  //TODO adapth this
+  /*
   if (states->nStates[depth][nErrors] >= MANY_STATES) {
     states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
   }
+  */
   //states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
   if (states->nStates[depth][nErrors] >= N_STATES) {
     //printf("      fifth case: # states = %zu >= %i after simplification.\n", states->nStates[depth][nErrors], N_STATES);
@@ -1777,6 +1780,12 @@ void mapWithErrors (states_t *states, path_t *path) {
   //printf("Mapping with errors\n");
   //printStates(states, path->depth-1);
   //printPath(path);
+  //TODO check this
+  if (path->maxDepth == TREE_BASE_SIZE) {
+    for (size_t nErrors = states->minErrors[TREE_BASE_SIZE]; nErrors <= states->maxErrors[N_TREE_BASE]; ++nErrors) {
+      states->nStates[TREE_BASE_SIZE][nErrors] = simplifyStates(states->states[TREE_BASE_SIZE][nErrors], states->nStates[TREE_BASE_SIZE][nErrors]);
+    }
+  }
 }
 
 bool shortCutCondition (const states_t *states, const path_t *path) {
