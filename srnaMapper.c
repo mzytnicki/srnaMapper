@@ -1392,26 +1392,29 @@ bool goDownTree (const tree_t *tree, path_t *path) {
 
 /**
  * Step into the last cells of the tree in a BFS fashion.
- * TODO simplify this, base on the fact that it can only be reached at level TREE_BASE_SIZE
  */
 bool goRightTreeBase (path_t *path) {
-  uint64_t cellId = path->cellIds[path->nCells], nextCellId = cellId + 1, mask = NUCLEOTIDE_MASK;
+  //uint64_t cellId = path->cellIds[path->nCells], nextCellId = cellId + 1, mask = NUCLEOTIDE_MASK;
   unsigned short newNucleotide = 0;
-  assert(path->depth == TREE_BASE_SIZE);
-  assert(path->nCells == TREE_BASE_SIZE);
-  //printf("    Entering go right base will cell %" PRIu64 " at depth %zu and read pos %zu\n", cellId, path->depth, path->readPos);
-  if (nextCellId == (1u << NUCLEOTIDES_BITS * path->depth)) {
-    return false;
+  assert(path->depth <= TREE_BASE_SIZE);
+  assert(path->nCells <= TREE_BASE_SIZE);
+  //printf("    Entering go right base will cell %" PRIu64 " at depth %zu, last nt %i, and read pos %zu\n", path->cellIds[path->nCells], path->depth, path->nucleotides[path->depth-1], path->readPos);
+  for (; path->nucleotides[path->depth-1] == N_NUCLEOTIDES - 1; --path->depth, ++path->readPos) {
+    if (path->depth == 1) return false;
   }
-  //TODO modify everything instead!
+  newNucleotide = path->nucleotides[path->depth-1] + 1;
+  path->read[path->readPos] = DNA5_TO_CHAR[newNucleotide];
+  path->nucleotides[path->depth-1] = newNucleotide;
+  /*
   for (unsigned int offset = 0; (cellId & mask) != (nextCellId & mask); ++offset, mask <<= NUCLEOTIDES_BITS) {
     newNucleotide = ((nextCellId & mask) >> (NUCLEOTIDES_BITS * offset));
     //printf("      Offset: %u, mask: %" PRIu64 ", depth: %zu, new char: %c\n", offset, mask, path->depth, DNA5_TO_CHAR[newNucleotide]);
     path->read[path->readPos+offset] = DNA5_TO_CHAR[newNucleotide];
     path->nucleotides[path->depth-offset-1] = newNucleotide;
   }
+  */
   path->nCells = path->depth;
-  path->cellIds[path->nCells] = nextCellId;
+  path->cellIds[path->nCells] = path->cellIds[path->nCells] + 1;
   //printf("      Leaving base will cell %" PRIu64 ", nucleotide %c, read %s\n", path->cellIds[path->nCells], "ACGT"[newNucleotide], path->read + path->readPos);
   path->edgeLength = 0;
   return true;
