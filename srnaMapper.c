@@ -90,6 +90,14 @@
 #define EDGE_SEQ_LENGTH 26
 #define EDGE_LENGTH_LENGTH 6
 #define MAX_EDGE_LENGTH 13
+#define MAX_SW_LENGTH 32
+#define MAX_SW_COST_SIZE 5
+#define SW_BACKTRACE_SIZE 2
+#define SW_BACKTRACE_SIZE_SIZE 5
+#define SW_MATCH         0
+#define SW_MISMATCH      1
+#define SW_INSERTION     2
+#define SW_DELETION      3
 
 typedef unsigned long count_t;
 
@@ -156,6 +164,10 @@ char *reverseComplementSequence (char *sequence, size_t size) {
   }
   revSequence[size] = 0;
   return revSequence;
+}
+
+unsigned short getNucleotide (unsigned long sequence, size_t position) {
+  return ((sequence >> (position * NUCLEOTIDES_BITS)) & NUCLEOTIDE_MASK);
 }
 
 typedef struct {
@@ -333,7 +345,7 @@ void addEdgeNucleotide (edge_t *edge, unsigned short nucleotide) {
 unsigned short getEdgeNucleotide (edge_t *edge, uint_fast16_t length) {
   assert(length <= edge->length);
   assert(length <= MAX_EDGE_LENGTH);
-  return ((edge->sequence >> (NUCLEOTIDES_BITS * length)) & NUCLEOTIDE_MASK);
+  return getNucleotide(edge->sequence, length);
 }
 
 void edgeRemoveFirst (edge_t *edge, size_t length) {
@@ -359,7 +371,7 @@ void printEdge (edge_t *edge) {
   }
   printf("-");
   for (unsigned int i = 0; i < edge->length; ++i) {
-    printf("%c", "ACGT"[(edge->sequence >> (NUCLEOTIDES_BITS * i)) & NUCLEOTIDE_MASK]);
+    printf("%c", "ACGT"[getNucleotide(edge->sequence, i)]);
   }
   printf("-> %" PRIu64, edge->cellId);
 }
@@ -413,6 +425,16 @@ void splitEdge (edge_t *edge, cell_t *newCell, uint64_t newCellId, sequence_t le
   newEdge->cellId = edge->cellId;
   edge->cellId = newCellId;
   //printf("   split edge %p into %i (%u) -> %" PRIu64 " and %p %i (%u) -> %" PRIu64 "\n", edge, edge->sequence, edge->length, edge->cellId, newEdge, newEdge->sequence, newEdge->length, newEdge->cellId);
+}
+
+unsigned short getNChildren (cell_t *cell) {
+  unsigned short nChildren = 0;
+  for (unsigned int edgeId = 0; edgeId < N_NUCLEOTIDES; ++edgeId) {
+    if (isSetEdge(&cell->edges[edgeId])) {
+      ++nChildren;
+    }
+  }
+  return nChildren;
 }
 
 void printCell (cell_t *cell) {
@@ -992,7 +1014,7 @@ typedef struct {
 /**
  * A state is an prefix of the genome tree, with additional information to perform backtrace.
  * It is:
- *   - an BWT-inteval
+ *   - a BWT-interval
  *   - the current operation of the backtrace
  *   - the parent state for a backtrace
  */
@@ -1050,6 +1072,228 @@ void printState (state_t *state, size_t maxDepth) {
   printf("\t\t\t\t%" PRIu64 "-%" PRIu64 ": %s (%c/%c -> %p)\n", getStateInterval(state)->k, getStateInterval(state)->l, tmpSeq2, CIGAR[(state->trace >> BACKTRACE_OFFSET) & BACKTRACE_MASK], "ACGT"[state->trace & NUCLEOTIDE_MASK], state->previousState);
 }
 
+/******* Smith-Waterman cell type *******/
+/**
+ * Contains value for backtrace
+ */
+typedef struct {
+  unsigned int value: MAX_SW_COST_SIZE;
+  unsigned int backTrace: SW_BACKTRACE_SIZE;
+  unsigned int nucleotide: NUCLEOTIDES_BITS;
+} sw_cell_t;
+
+/******* Smith-Waterman type *******/
+/**
+ * Perform the Smith-Waterman algorithm on the reads and the genome.
+ * The matrix uses only a band.
+ *                  <--- read ---->
+ *                 +-+-+-+-+-+-+-+-+
+ *  ^            ^ |X|X|N| | | | | |
+ *  g     # dels | +-+-+-+-+-+-+-+-+
+ *  e            | |X|N|N| | | | | |
+ *  n              +-+-+-+-+-+-+-+-+
+ *  o   0 error -> |N|N|N| | | | | | 
+ *  m              +-+-+-+-+-+-+-+-+
+ *  e            | |N|N|N| | | | | |
+ *  |      # ins | +-+-+-+-+-+-+-+-+
+ *  v            v |N|N|N| | | | | |
+ *                 +-+-+-+-+-+-+-+-+
+ *
+ *
+ */
+typedef struct {
+  uint_fast16_t readSequence;
+  uint_fast16_t readLength;
+  uint_fast32_t genomeSequence;
+  size_t        genomeLength;
+  bwtinterval_t genomeInterval;
+  unsigned int  alignmentSize;
+  sw_cell_t   **matrix;
+  state_t      *states;
+} sw_t;
+
+void createSW (sw_t *sw) {
+  sw->matrix = (sw_cell_t **) malloc((MAX_EDGE_LENGTH + parameters->maxNErrors + 1) * sizeof(unsigned int *));
+  for (size_t i = 0; i <= MAX_EDGE_LENGTH + parameters->maxNErrors; ++i) {
+    sw->matrix[i] = (sw_cell_t *) malloc((2 * parameters->maxNErrors + 1) * sizeof(unsigned int ));
+    sw->matrix[i][0].value = i;
+  }
+  for (unsigned int i = 1; i <= parameters->maxNErrors; ++i) {
+    sw->matrix[0][i].value = i;
+    sw->matrix[0][i].backTrace = SW_DELETION;
+  }
+  sw->states = (state_t *) malloc((MAX_EDGE_LENGTH + parameters->maxNErrors + 1) * sizeof(state_t));
+}
+
+void setReadSequence (sw_t *sw, uint_fast16_t sequence, uint_fast16_t length) {
+  sw->readSequence = sequence;
+  sw->readLength   = length;
+}
+
+void setGenomeSequence (sw_t *sw, state_t *state) {
+  int      isRev;
+  int      rid;
+  bwtint_t pos;
+  pos = bwt_sa(bwt, state->interval.k);
+  pos = bns_depos(bns, pos, &isRev);
+  rid = bns_pos2rid(bns, pos);
+  sw->genomeSequence = 0;
+  sw->genomeLength   = 0;
+  for (unsigned int i = 0; i < MAX_SW_LENGTH; ++i) {
+    pos = (isRev)? pos+1: pos-1;
+    sw->genomeSequence <<= NUCLEOTIDES_BITS;
+    sw->genomeSequence |= DNA5_TO_INT_REV[isRev][_get_pac(pac, pos)];
+  }
+  sw->genomeInterval = state->interval;
+}
+
+bool tryNoDiffSW (sw_t *sw) {
+  uint_fast16_t genomeMask = (1 << sw->readLength * NUCLEOTIDES_BITS) - 1;
+  uint_fast32_t genomeSequence = sw->genomeSequence & genomeMask;
+  bwtinterval_t previousInterval;
+  unsigned short genomeNucleotide;
+  if (genomeSequence == sw->readSequence) {
+    previousInterval = sw->genomeInterval;
+    sw->alignmentSize = sw->readLength;
+    for (unsigned int i = 0; i < sw->alignmentSize; ++i) {
+      genomeNucleotide = genomeSequence & NUCLEOTIDE_MASK;
+      bwt_2occ(bwt, previousInterval.k-1, previousInterval.l, genomeNucleotide, &sw->states[i].interval.k, &sw->states[i].interval.l);
+      sw->states[i].interval.k = bwt->L2[genomeNucleotide] + sw->states[i].interval.k + 1;
+      sw->states[i].interval.l = bwt->L2[genomeNucleotide] + sw->states[i].interval.l;
+      genomeNucleotide >>= NUCLEOTIDES_BITS;
+    }
+    return true;
+  }
+  return false;
+}
+
+unsigned int getScore (sw_t *sw, unsigned int maxNErrors) {
+  uint_fast16_t readSequence = sw->readSequence;
+  uint_fast32_t genomeSequence = 0;
+  unsigned short readNucleotide, genomeNucleotide;
+  unsigned int readId, genomeId, xId, yId, bestYId = 2 * parameters->maxNErrors + 2;
+  unsigned int v1, v2, v3;
+  unsigned int minValue;
+  bwtinterval_t previousInterval;
+  bool match;
+  if (tryNoDiffSW(sw)) {
+    return 0;
+  }
+  for (unsigned int i = 1; i <= parameters->maxNErrors; ++i) {
+    sw->matrix[0][i].nucleotide = getNucleotide(sw->genomeSequence, i);
+  }
+  // local alignment
+  for (readId = 0; readId < sw->readLength; ++readId) {
+    readNucleotide = readSequence & NUCLEOTIDE_MASK;
+    minValue = maxNErrors + 1;
+    for (int diff = -parameters->maxNErrors; diff <= parameters->maxNErrors; ++diff) {
+      if (readId + diff >= 0) {
+        genomeId = readId + diff;
+        yId = diff + parameters->maxNErrors;
+        genomeNucleotide = getNucleotide(sw->genomeSequence, genomeId);
+        match = (readNucleotide == genomeNucleotide);
+        v1 = sw->matrix[readId+1][yId].value + 1;
+        v2 = sw->matrix[readId][yId+1].value + 1;
+        v3 = sw->matrix[readId][yId].value   + (match? 0: 1);
+        if ((v3 <= v1) && (v3 <= v2)) {
+          sw->matrix[readId+1][yId+1].value = v3;
+          sw->matrix[readId+1][yId+1].backTrace = (match)? SW_MATCH: SW_MISMATCH;
+          sw->matrix[readId+1][yId+1].nucleotide = genomeNucleotide;
+        }
+        else if (v1 <= v2) {
+          sw->matrix[readId+1][yId+1].value = v1;
+          sw->matrix[readId+1][yId+1].backTrace = SW_INSERTION;
+          sw->matrix[readId+1][yId+1].nucleotide = readNucleotide;
+        }
+        else {
+          sw->matrix[readId+1][yId+1].value = v2;
+          sw->matrix[readId+1][yId+1].backTrace = SW_DELETION;
+          sw->matrix[readId+1][yId+1].nucleotide = genomeNucleotide;
+        }
+        minValue = MIN(minValue, sw->matrix[readId+1][yId+1].value);
+      }
+    }
+    if (minValue == maxNErrors + 1) {
+      return parameters->maxNErrors + 1;
+    }
+    readSequence >>= NUCLEOTIDES_BITS;
+  }
+  // get end matching position
+  minValue = parameters->maxNErrors + 1;
+  readId   = sw->readLength;
+  for (int diff = -parameters->maxNErrors; diff <= -parameters->maxNErrors; ++diff) {
+    if (readId + diff >= 0) {
+      yId = diff + parameters->maxNErrors;
+      if (sw->matrix[readId+1][yId+1].value < minValue) {
+        minValue = sw->matrix[readId+1][yId+1].value;
+        bestYId = yId;
+      }
+    }
+  }
+  assert(bestYId != 2 * parameters->maxNErrors + 2);
+  // get size of backtracing
+  assert(sw->alignmentSize <= MAX_EDGE_LENGTH + parameters->maxNErrors + 1);
+  xId = readId;
+  yId = bestYId;
+  while((xId != 0) & (yId != parameters->maxNErrors)) {
+    ++sw->alignmentSize;
+    switch(sw->matrix[xId+1][yId+1].backTrace) {
+      case SW_MATCH:
+      case SW_MISMATCH:
+        --xId;
+        break;
+      case SW_INSERTION:
+        --xId;
+        --yId;
+        break;
+      case SW_DELETION:
+        ++yId;
+        break;
+      default:
+        assert(false);
+    }
+  }
+  // backtrace
+  xId = readId;
+  yId = bestYId;
+  for (unsigned int backtraceId = 0; backtraceId < sw->alignmentSize; ++backtraceId) {
+    sw->states[backtraceId].trace = (sw->matrix[xId+1][yId+1].backTrace << BACKTRACE_OFFSET) | sw->matrix[xId+1][yId+1].nucleotide;
+    switch(sw->matrix[xId+1][yId+1].backTrace) {
+      case SW_MATCH:
+      case SW_MISMATCH:
+        genomeSequence <<= NUCLEOTIDES_BITS;
+        genomeSequence |= sw->matrix[xId+1][yId+1].nucleotide;
+        --xId;
+        break;
+      case SW_INSERTION:
+        --xId;
+        --yId;
+        break;
+      case SW_DELETION:
+        genomeSequence <<= NUCLEOTIDES_BITS;
+        genomeSequence |= sw->matrix[xId+1][yId+1].nucleotide;
+        ++yId;
+        break;
+      default:
+        assert(false);
+    }
+  }
+  assert(xId == 0);
+  assert(yId == 0);
+  // add BWT intervals
+  previousInterval = sw->genomeInterval;
+  for (int backtraceId = 0; backtraceId < sw->alignmentSize; ++backtraceId) {
+    genomeNucleotide = genomeSequence & NUCLEOTIDE_MASK;
+    bwt_2occ(bwt, previousInterval.k-1, previousInterval.l, genomeNucleotide, &sw->states[backtraceId].interval.k, &sw->states[backtraceId].interval.l);
+    sw->states[backtraceId].interval.k = bwt->L2[genomeNucleotide] + sw->states[backtraceId].interval.k + 1;
+    sw->states[backtraceId].interval.l = bwt->L2[genomeNucleotide] + sw->states[backtraceId].interval.l;
+    genomeNucleotide >>= NUCLEOTIDES_BITS;
+  }
+  assert(genomeNucleotide == 0);
+  return minValue;
+}
+
+
 /******* States type *******/
 /**
  * The states stores the mapping information of the prefixes of reads.
@@ -1069,6 +1313,7 @@ typedef struct {
   size_t *minErrors;
   size_t *maxErrors;
   size_t treeSize;
+  sw_t   *sw;
 } states_t;
 
 bool goDownBwt (state_t *previousState, unsigned short nucleotide, state_t *newState) {
@@ -1115,6 +1360,7 @@ bool canMerge (state_t *state1, state_t *state2) {
 }
 
 size_t simplifyStates (state_t *states, size_t nStates) {
+  //TODO check that the pointers are good!
   //printf("\t\t\t\tSimplify states from %zu ", nStates);
   qsort(states, nStates, sizeof(state_t), sortCompareStates);
   size_t firstStateId = 0;
@@ -1165,6 +1411,7 @@ states_t *initializeStates(size_t treeSize) {
   states->nStatesPerPosition = (size_t *)    calloc((treeSize+1),  sizeof(size_t));
   states->minErrors          = (size_t *)    malloc((treeSize+1) * sizeof(size_t));
   states->maxErrors          = (size_t *)    malloc((treeSize+1) * sizeof(size_t));
+  states->sw                 = (sw_t *)      malloc(sizeof(sw_t));
   for (size_t depth = 0; depth <= treeSize; ++depth) {
     states->states[depth]    = (state_t **) malloc((parameters->maxNErrors+1) * sizeof(states_t *));
     states->nStates[depth]   = (size_t *)   calloc((parameters->maxNErrors+1),  sizeof(size_t));
@@ -1176,6 +1423,7 @@ states_t *initializeStates(size_t treeSize) {
   }
   state_t baseState = { { 0, bwt->seq_len }, 0, NULL };
   addState(states, 0, 0, &baseState);
+  createSW(states->sw);
   return states;
 }
 
@@ -1654,6 +1902,11 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   state_t nextState;
   bool mapFound = false;
   //printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]);
+  /*
+  if (states->nStates[depth-1][nErrors] >= MANY_STATES) {
+    states->nStates[depth-1][nErrors] = simplifyStates(states->states[depth-1][nErrors], states->nStates[depth-1][nErrors]);
+  }
+  */
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
     previousState = &states->states[depth-1][nErrors][stateId];
     if (goDownBwt(previousState, nt, &nextState)) {
@@ -1791,9 +2044,33 @@ void mapWithErrors (states_t *states, path_t *path) {
   }
 }
 
-bool shortCutCondition (const states_t *states, const path_t *path) {
-  return false;
-  return ((path->depth >= path->shortCut->depth) && (states->minErrors[path->depth] == 0) && (states->nStates[path->depth][0] == 1) && (getStateInterval(&states->states[path->depth][0][0])->k == getStateInterval(&states->states[path->depth][0][0])->l));
+bool shortCutCondition (const states_t *states, const tree_t *tree, const path_t *path) {
+  return ((path->edgeLength == 0) && (getNChildren(&tree->cells[path->cellIds[path->nCells]]) == 1) && (getStateInterval(&states->states[path->depth][0][0])->k == getStateInterval(&states->states[path->depth][0][0])->l));
+}
+
+bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path) {
+  unsigned int score, bestScore = parameters->maxNErrors;
+  cell_t *cell = &tree->cells[path->cellIds[path->nCells]];
+  edge_t *edge;
+  uint_fast16_t readSequence = 0, readLength = 0;
+  for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
+    edge = &cell->edges[nt];
+    if (isSetEdge(edge)) {
+      readSequence = edge->sequence;
+      readLength   = edge->length;
+      break;
+    }
+  }
+  assert(readLength != 0);
+  for (unsigned int nErrors = states->minErrors[path->depth]; nErrors <= states->maxErrors[path->depth]; ++nErrors) {
+    for (unsigned int stateId = 0; stateId < states->nStates[path->depth][nErrors]; ++stateId) {
+      setReadSequence(states->sw, readSequence, readLength);
+      setGenomeSequence(states->sw, &states->states[path->depth][nErrors][stateId]);
+      score = getScore(states->sw, bestScore - nErrors);
+      bestScore = MIN(score + nErrors, bestScore);
+    }
+  }
+  return (bestScore <= parameters->maxNErrors);
 }
 
 /*
