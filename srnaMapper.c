@@ -2187,7 +2187,7 @@ void mapWithErrors (states_t *states, path_t *path) {
   }
 }
 
-bool shortCutCondition (const states_t *states, const tree_t *tree, const path_t *path) {
+bool shortCutCondition (const tree_t *tree, const path_t *path) {
   return ((path->depth >= TREE_BASE_SIZE) && (path->edgeLength == 0) && (getNChildren(&tree->cells[path->cellIds[path->nCells]]) == 1));
 }
 
@@ -2234,8 +2234,8 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path) {
       printf("\t\tAdding nucleotide\n");
       appendNucleotidePath(path, bestStates[i].trace & NUCLEOTIDE_MASK, DNA5_TO_CHAR[bestStates[i].trace & NUCLEOTIDE_MASK]);
     }
-    //if ((bestStates[i].trace & MATCH) == 0) {
-    if (bestStates[i].trace >= MISMATCH) {
+    //if (bestStates[i].trace >= MISMATCH) {
+    if ((bestStates[i].trace & BACKTRACE_MASK) != MATCH) {
       ++currentNErrors;
     }
     if (! addState(states, path->depth, currentNErrors, &bestStates[i])) {
@@ -2357,7 +2357,7 @@ void _map (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFi
   bool mappable = true;
   char *quality;
   while (true) {
-    if ((mappable) && (shortCutCondition(states, tree, path))) {
+    if ((mappable) && (shortCutCondition(tree, path))) {
       mappable = tryShortCuts(tree, states, path);
       if (mappable) {
         printf("Short cut with positive exit\n");
