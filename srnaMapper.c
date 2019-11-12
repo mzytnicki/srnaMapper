@@ -611,7 +611,7 @@ void _computeTreeStats (const tree_t *tree, unsigned int **stats, unsigned int *
       _computeTreeStats(tree, stats, statsSum, branchSizes, branchSize, &tree->cells[edge->cellId], depth+edge->length, nNodes, nQualities);
     }
   }
-  printf("At depth %zu/%zu with %i nucleotides\n", depth, tree->depth, c); fflush(stdout);
+  //printf("At depth %zu/%zu with %i nucleotides\n", depth, tree->depth, c); fflush(stdout);
   ++stats[depth][c];
   ++statsSum[c];
 }
@@ -1250,7 +1250,7 @@ unsigned int getScore (sw_t *sw, unsigned int maxNErrors) {
   unsigned short readNucleotide, genomeNucleotide;
   unsigned int readId, genomeId, xId, yId, startingYId = 2 * maxNErrors + 2, bestYId = startingYId;
   unsigned int v1, v2, v3;
-  unsigned int minValue;
+  unsigned int minValue = maxNErrors + 1;
   bwtinterval_t previousInterval;
   bool match;
   if (tryNoDiffSW(sw)) {
