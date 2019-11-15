@@ -1170,7 +1170,7 @@ void createSW (sw_t *sw) {
   size_t nCols = MAX_EDGE_LENGTH + parameters->maxNErrors + 1;
   size_t nRows = 2 * parameters->maxNErrors + 1;
   sw->genomeSequences = (uint_fast64_t *) malloc(MAX_SW_N_SEQUENCES * sizeof(uint_fast64_t));
-  sw->genomeLengths   = (size_t *) malloc(MAX_SW_N_SEQUENCES * sizeof(uint_fast64_t));
+  sw->genomeLengths   = (size_t *) calloc(MAX_SW_N_SEQUENCES, sizeof(uint_fast64_t));
   sw->matrix = (sw_cell_t **) malloc(nCols * sizeof(unsigned int *));
   for (size_t i = 0; i < nCols; ++i) {
     sw->matrix[i] = (sw_cell_t *) malloc(nRows * sizeof(unsigned int));
@@ -1954,23 +1954,96 @@ void writeQname (char *qname, count_t *counts) {
 }
 
 /**
+ * Print one line in the SAM file
+ */
+void printReadLine (char *qname, unsigned int flag, char *chrName, int64_t pos, unsigned int mapq, char *cigar, char *seq, char *qual, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, FILE *outputSamFile) {
+  fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", qname, flag, chrName, pos, mapq, cigar, seq, qual, nHits, hitId, nHits, nErrors);
+}
+
+/**
  * Print a read, which maps only once, and with no error
  */
 void printReadUniqueNoError (int strand, char *chrName, int64_t pos, size_t readLength, char *sequence, char *quality, count_t *counts, FILE *outputSamFile) {
   char qname[255];
+  char cigar[5];
   unsigned int flag = 0;
   char *seq = sequence;
   char *qual = quality;
+  sprintf(cigar, "%zuM", readLength);
   if (strand == 0) {
     flag = CIGAR_REVERSE;
     seq  = reverseComplementSequence(sequence, readLength);
     qual = reverseSequence(quality, readLength);
   }
   writeQname(qname, counts);
-  fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t40\t%zuM\t*\t0\t0\t%s\t%s\tNH:i:1\tHI:i:1\tIH:i:1\tNM:i:0\n", qname, flag, chrName, pos, readLength, seq, qual);
+  printReadLine(qname, flag, chrName, pos, 40, cigar, seq, qual, 1, 1, 0, outputSamFile);
+  //fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t40\t%zuM\t*\t0\t0\t%s\t%s\tNH:i:1\tHI:i:1\tIH:i:1\tNM:i:0\n", qname, flag, chrName, pos, readLength, seq, qual);
   if (strand == 0) {
     free(seq);
     free(qual);
+  }
+}
+
+void __printRead (size_t depth, bwtint_t bwtint, char *qname, unsigned int mapq, char *forwardCigar, char *backwardCigar, char *forwardSeq, char *backwardSeq, char *forwardQual, char *backwardQual, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, FILE *outputSamFile) {
+  char *seq, *qual, *cigar;
+  int strand, rid;
+  unsigned int flag = (hitId == 0)? 0: CIGAR_SECONDARY_HIT;
+  int64_t pos = bwa_sa2pos(bns, bwt, bwtint, depth, &strand);
+  rid = bns_pos2rid(bns, pos);
+  pos = pos - bns->anns[rid].offset + 1;
+  if (strand == 0) {
+    flag |= CIGAR_REVERSE;
+    if (backwardSeq  == NULL) backwardSeq  = reverseComplementSequence(forwardSeq, depth);
+    if (backwardQual == NULL) backwardQual = reverseSequence(forwardQual, depth);
+    seq  = backwardSeq;
+    qual = backwardQual;
+    cigar = backwardCigar;
+  }
+  else {
+    seq  = forwardSeq;
+    qual = forwardQual;
+    cigar = forwardCigar;
+  }
+  printReadLine (qname, flag, bns->anns[rid].name, pos, mapq, cigar, seq, qual, nHits, hitId, nErrors, outputSamFile);
+  //fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", qname, flag, bns->anns[rid].name, pos, mapq, cigar, seq, qual, nHits, hitId, nHits, nErrors);
+}
+
+void _printRead (state_t *state, size_t depth, char *qname, unsigned int mapq, char *forwardCigar, char *backwardCigar, char *forwardSeq, char *backwardSeq, char *forwardQual, char *backwardQual, bwtint_t nHits, unsigned int nErrors, FILE *outputSamFile) {
+  state_t *currentState;
+  unsigned char backtraceLengths[255];
+  char backtraceCigar[255];
+  size_t backtraceSize;
+  size_t forwardCigarSize = 0;
+  size_t backwardCigarSize = 0;
+  unsigned int hitId = 0;
+  if (nErrors != 0) {
+    currentState = state;
+    backtraceSize = 0;
+    while (currentState->previousState != NULL) {
+      //printState(currentState, path->maxDepth);
+      char cigar = CIGAR[currentState->trace >> BACKTRACE_OFFSET];
+      if ((backtraceSize == 0) || (backtraceCigar[backtraceSize-1] != cigar)) {
+        backtraceCigar[backtraceSize] = cigar;
+        backtraceLengths[backtraceSize] = 1;
+        ++backtraceSize;
+      }
+      else {
+        ++backtraceLengths[backtraceSize-1];
+      }
+      currentState = currentState->previousState;
+    }
+    //TODO Optimize this
+    forwardCigarSize = backwardCigarSize = 0;
+    for (size_t backtraceId = 0; backtraceId < backtraceSize; ++backtraceId) {
+      forwardCigarSize  += sprintf(forwardCigar+forwardCigarSize,   "%i%c", backtraceLengths[backtraceId], backtraceCigar[backtraceId]);
+      backwardCigarSize += sprintf(backwardCigar+backwardCigarSize, "%i%c", backtraceLengths[backtraceSize-backtraceId-1], backtraceCigar[backtraceSize-backtraceId-1]);
+    }
+    forwardCigar[forwardCigarSize] = 0;
+    backwardCigar[backwardCigarSize] = 0;
+  }
+  for (bwtint_t bwtint = getStateInterval(state)->k; bwtint <= getStateInterval(state)->l; ++bwtint) {
+    ++hitId;
+    __printRead (depth, bwtint, qname, mapq, forwardCigar, backwardCigar, forwardSeq, backwardSeq, forwardQual, backwardQual, nHits, hitId, nErrors, outputSamFile);
   }
 }
 
@@ -1979,29 +2052,17 @@ void printReadUniqueNoError (int strand, char *chrName, int64_t pos, size_t read
  */
 void printRead (states_t *states, path_t *path, char *quality, count_t *counts, FILE *outputSamFile) {
   size_t depth = path->depth;
-  size_t readLength = depth;
+  int strand, rid;
   char qname[255];
-  unsigned int flag;
   int64_t pos;
   unsigned int mapq;
-  char *cigar;
-  unsigned char backtraceLengths[255];
-  char backtraceCigar[255];
-  size_t backtraceSize;
   char forwardCigar[255];
   char backwardCigar[255];
-  size_t forwardCigarSize = 0;
-  size_t backwardCigarSize = 0;
   char *forwardSeq = path->read + path->readPos;
   char *backwardSeq = NULL;
-  char *seq;
   char *forwardQual = quality;
   char *backwardQual = NULL;
-  char *qual = NULL;
-  state_t *state, *currentState;
-  int strand, rid;
   bwtint_t nHits = 0;
-  unsigned int hitId = 0;
   unsigned int nErrors = states->minErrors[depth];
   size_t nStates = states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
   state_t *theseStates = states->states[depth][nErrors];
@@ -2023,11 +2084,11 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
     pos = bwa_sa2pos(bns, bwt, theseStates[0].interval.k, depth, &strand);
     rid = bns_pos2rid(bns, pos);
     pos = pos - bns->anns[rid].offset + 1;
-    printReadUniqueNoError(strand, bns->anns[rid].name, pos, readLength, forwardSeq, quality, counts, outputSamFile);
+    printReadUniqueNoError(strand, bns->anns[rid].name, pos, depth, forwardSeq, quality, counts, outputSamFile);
     return;
   }
   if (nErrors == 0) {
-    sprintf(forwardCigar, "%zu=", readLength);
+    sprintf(forwardCigar, "%zu=", depth);
     strcpy(backwardCigar, forwardCigar);
   }
   if ((nHits > 1) || (nErrors >= 40)) {
@@ -2038,57 +2099,7 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   }
   //printf("Read: %s, read length: %zu\n", forwardSeq, readLength);
   for (size_t stateId = 0; stateId < nStates; ++stateId) {
-    state = &theseStates[stateId];
-    if (nErrors != 0) {
-      currentState = state;
-      backtraceSize = 0;
-      while (currentState->previousState != NULL) {
-        //printf("\t\tCurrent state #%zu %p\n", stateId, currentState);
-        //printState(currentState, path->maxDepth); fflush(stdout);
-        char cigar = CIGAR[currentState->trace >> BACKTRACE_OFFSET];
-        if ((backtraceSize == 0) || (backtraceCigar[backtraceSize-1] != cigar)) {
-          backtraceCigar[backtraceSize] = cigar;
-          backtraceLengths[backtraceSize] = 1;
-          ++backtraceSize;
-        }
-        else {
-          ++backtraceLengths[backtraceSize-1];
-        }
-        currentState = currentState->previousState;
-        assert(currentState != NULL);
-        //printf("\t\tNext state #%zu %p\n", stateId, currentState);
-        //printState(currentState, path->maxDepth); fflush(stdout);
-      }
-      //TODO Optimize this
-      forwardCigarSize = backwardCigarSize = 0;
-      for (size_t backtraceId = 0; backtraceId < backtraceSize; ++backtraceId) {
-        forwardCigarSize  += sprintf(forwardCigar+forwardCigarSize,   "%i%c", backtraceLengths[backtraceId], backtraceCigar[backtraceId]);
-        backwardCigarSize += sprintf(backwardCigar+backwardCigarSize, "%i%c", backtraceLengths[backtraceSize-backtraceId-1], backtraceCigar[backtraceSize-backtraceId-1]);
-      }
-      forwardCigar[forwardCigarSize] = 0;
-      backwardCigar[backwardCigarSize] = 0;
-    }
-    for (bwtint_t j = getStateInterval(state)->k; j <= getStateInterval(state)->l; ++j) {
-      flag = (hitId == 0)? 0: CIGAR_SECONDARY_HIT;
-      ++hitId;
-      pos = bwa_sa2pos(bns, bwt, j, depth, &strand);
-      rid = bns_pos2rid(bns, pos);
-      pos = pos - bns->anns[rid].offset + 1;
-      if (strand == 0) {
-        flag |= CIGAR_REVERSE;
-        if (backwardSeq  == NULL) backwardSeq  = reverseComplementSequence(forwardSeq, readLength);
-        if (backwardQual == NULL) backwardQual = reverseSequence(forwardQual, readLength);
-        seq  = backwardSeq;
-        qual = backwardQual;
-        cigar = backwardCigar;
-      }
-      else {
-        seq  = forwardSeq;
-        qual = forwardQual;
-        cigar = forwardCigar;
-      }
-      fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", qname, flag, bns->anns[rid].name, pos, mapq, cigar, seq, qual, nHits, hitId, nHits, nErrors);
-    }
+    _printRead (&theseStates[stateId], path->depth, qname, mapq, forwardCigar, backwardCigar, forwardSeq, backwardSeq, forwardQual, backwardQual, nHits, nErrors, outputSamFile);
   }
   if (backwardSeq)  free(backwardSeq);
   if (backwardQual) free(backwardQual);
