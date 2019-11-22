@@ -104,6 +104,8 @@
 #define MAX_CIGAR_SIZE 510
 #define MAX_QNAME_SIZE 255
 
+#define BWT_BUFFER_SIZE 1000
+
 typedef unsigned long count_t;
 
 const char DNA5_TO_CHAR [5] = { 'A', 'C', 'G', 'T', 'N' };
@@ -190,23 +192,23 @@ void printSequenceLong (unsigned short *sequence, size_t length) {
 typedef struct {
   unsigned long int nReads;
   unsigned long int nShortReads;
-  unsigned long int nShortCuts;
-  unsigned long int nShortCutSuccesses;
   unsigned long int nDown;
   unsigned long int nDownPreprocessed;
+  unsigned long int nBufferCalls;
+  unsigned long int nBufferCallSucesses;
   size_t            maxNStates;
 } stats_t;
 
 stats_t *stats;
 
 void initializeStats () {
-  stats->nReads             = 0;
-  stats->nShortReads        = 0;
-  stats->nShortCuts         = 0;
-  stats->nShortCutSuccesses = 0;
-  stats->nDown              = 0;
-  stats->nDownPreprocessed  = 0;
-  stats->maxNStates         = 0;
+  stats->nReads              = 0;
+  stats->nShortReads         = 0;
+  stats->nDown               = 0;
+  stats->nDownPreprocessed   = 0;
+  stats->nBufferCalls        = 0;
+  stats->nBufferCallSucesses = 0;
+  stats->maxNStates          = 0;
 }
 
 void printStats () {
@@ -214,9 +216,8 @@ void printStats () {
   savedLocale = setlocale (LC_ALL, NULL);
   setlocale(LC_NUMERIC, "");
   printf("Very small sequences: %'lu/%'lu\n", stats->nShortReads, stats->nReads);
-  printf("Short cut succeeded %'lu/%'lu\n", stats->nShortCutSuccesses, stats->nShortCuts);
-  printf("# BWT preprocessed %'lu/%'lu\n", stats->nDownPreprocessed, stats->nDown);
   printf("# max states %'zu/%'i\n", stats->maxNStates, N_STATES);
+  printf("# buffer call successes %'lu/%'lu (%i%%)\n", stats->nBufferCallSucesses, stats->nBufferCalls, (int) (round(((double) stats->nBufferCallSucesses) / stats->nBufferCalls)));
   setlocale(LC_ALL, savedLocale);
 }
 
@@ -306,26 +307,58 @@ int parseCommandLine (int argc, char const **argv) {
 typedef struct {
   FILE *file;
   char *qname;
+  unsigned int backtraceSize;
+  char *backtraceCigar;
+  unsigned char *backtraceLengths;
   char *forwardCigar;
-  char *backwardCigar:
+  char *backwardCigar;
   char *forwardSeq;
   char *backwardSeq;
   char *forwardQual;
   char *backwardQual;
+  bool isBackwardSet;
 } outputSam_t;
 
 void createOutputSam (outputSam_t *outputSam, unsigned int size) {
-  outputSam->qname         = (char *) malloc(MAX_QNAME_SIZE * sizeof(char));
-  outputSam->forwardCigar  = (char *) malloc(MAX_CIGAR_SIZE * sizeof(char));
-  outputSam->backwardCigar = (char *) malloc(MAX_CIGAR_SIZE * sizeof(char));
-  outputSam->forwardSeq    = (char *) malloc(size * sizeof(char));
-  outputSam->backwardSeq   = (char *) malloc(size * sizeof(char));
-  outputSam->forwardQual   = (char *) malloc(size * sizeof(char));
-  outputSam->backwardQual  = (char *) malloc(size * sizeof(char));
+  outputSam->isBackwardSet    = false;
+  outputSam->qname            = (char *) malloc(MAX_QNAME_SIZE * sizeof(char));
+  outputSam->backtraceCigar   = (char *) malloc(MAX_CIGAR_SIZE * sizeof(char));
+  outputSam->backtraceLengths = (unsigned char *) malloc(MAX_CIGAR_SIZE * sizeof(unsigned char));
+  outputSam->forwardCigar     = (char *) malloc(MAX_CIGAR_SIZE * sizeof(char));
+  outputSam->backwardCigar    = (char *) malloc(MAX_CIGAR_SIZE * sizeof(char));
+  outputSam->forwardSeq       = (char *) malloc((size+1) * sizeof(char));
+  outputSam->backwardSeq      = (char *) malloc((size+1) * sizeof(char));
+  outputSam->forwardQual      = (char *) malloc((size+1) * sizeof(char));
+  outputSam->backwardQual     = (char *) malloc((size+1) * sizeof(char));
+}
+
+void computeCigar (outputSam_t *outputSam) {
+  size_t forwardCigarSize = 0;
+  size_t backwardCigarSize = 0;
+  //TODO Optimize this
+  forwardCigarSize = backwardCigarSize = 0;
+  for (size_t backtraceId = 0; backtraceId < outputSam->backtraceSize; ++backtraceId) {
+    forwardCigarSize  += sprintf(outputSam->forwardCigar+forwardCigarSize,   "%i%c", outputSam->backtraceLengths[backtraceId], outputSam->backtraceCigar[backtraceId]);
+    backwardCigarSize += sprintf(outputSam->backwardCigar+backwardCigarSize, "%i%c", outputSam->backtraceLengths[outputSam->backtraceSize-backtraceId-1], outputSam->backtraceCigar[outputSam->backtraceSize-backtraceId-1]);
+  }
+  outputSam->forwardCigar[forwardCigarSize] = 0;
+  outputSam->backwardCigar[backwardCigarSize] = 0;
+}
+
+void setCigarNoError (outputSam_t *outputSam, unsigned int readLength) {
+  sprintf(outputSam->forwardCigar, "%uM", readLength);
+  sprintf(outputSam->backwardCigar, "%uM", readLength);
+}
+
+void computeReverseComplement (outputSam_t *outputSam) {
+  size_t readLength = strlen(outputSam->forwardSeq);
+  outputSam->isBackwardSet = true;
+  reverseComplementSequence(outputSam->forwardSeq, outputSam->backwardSeq, readLength);
+  reverseSequence(outputSam->forwardQual, outputSam->backwardQual, readLength);
 }
 
 void freeOutputSam (outputSam_t *outputSam) {
-  free(outputSam->mapq);
+  free(outputSam->qname);
   free(outputSam->forwardCigar);
   free(outputSam->backwardCigar);
   free(outputSam->forwardSeq);
@@ -343,11 +376,11 @@ void freeOutputSam (outputSam_t *outputSam) {
  *   - the sequence: mix of sequence and length
  *   - the id of the next cell
  */
-typedef uint_fast16_t sequence_t;
+typedef uint32_t sequence_t;
 
 typedef struct {
-  uint_fast16_t sequence: EDGE_SEQ_LENGTH;
-  uint_fast16_t length:   EDGE_LENGTH_LENGTH;
+  sequence_t sequence: EDGE_SEQ_LENGTH;
+  sequence_t length:   EDGE_LENGTH_LENGTH;
   uint64_t cellId;
 } edge_t;
 
@@ -389,7 +422,7 @@ void addEdgeNucleotide (edge_t *edge, unsigned short nucleotide) {
   ++edge->length;
 }
 
-unsigned short getEdgeNucleotide (edge_t *edge, uint_fast16_t length) {
+unsigned short getEdgeNucleotide (edge_t *edge, sequence_t length) {
   assert(length <= edge->length);
   assert(length <= MAX_EDGE_LENGTH);
   return getNucleotide(edge->sequence, length);
@@ -752,9 +785,14 @@ uint64_t splitEdgeTree (tree_t *tree, edge_t *edge, sequence_t length, unsigned 
 bool isCellUnbranched (const tree_t *tree, cell_t *cell) {
   bool foundOneChild = false;
   unsigned short child = 0;
+  //printf("\t\tCell unbranched: ");
+  //printCell(cell);
+  //printf("\n");
   for (unsigned int edgeId = 0; edgeId < N_NUCLEOTIDES; ++edgeId) {
     if (isSetEdge(&cell->edges[edgeId])) {
+      //printEdge(&cell->edges[edgeId]);
       if (foundOneChild) {
+        //printf("\t\t\tNo\n");
         return false;
       }
       foundOneChild = true;
@@ -764,6 +802,7 @@ bool isCellUnbranched (const tree_t *tree, cell_t *cell) {
   if (foundOneChild) {
     return isCellUnbranched(tree, &tree->cells[cell->edges[child].cellId]);
   }
+  //printf("\t\t\tYes\n");
   return true;
 }
 
@@ -1096,6 +1135,9 @@ typedef struct {
   bwtint_t k, l;
 } bwtinterval_t;
 
+bool compareBwtIntervals (bwtinterval_t *i1, bwtinterval_t *i2) {
+  return ((i1->k == i2->k) && (i1->l == i2->l));
+}
 
 //static unsigned long nIntervals;
 
@@ -1236,7 +1278,7 @@ void unsetReadSequence (sw_t *sw) {
   sw->readLength = 0;
 }
 
-void addReadSequence (sw_t *sw, uint_fast16_t sequence, unsigned int length) {
+void addReadSequence (sw_t *sw, sequence_t sequence, unsigned int length) {
   //TODO double-check the direction
   //printf("\t\t\tSetting read sequence (%d): ", length);
   //printSequence(sequence, length);
@@ -1302,9 +1344,9 @@ unsigned int setGenomeSequences (sw_t *sw, state_t *state) {
 }
 
 void setGenomeSequence (sw_t *sw, unsigned int genomeSequenceId) {
-  printf("\t\t\tUsing genome sequence: ");
-  printSequenceLong(sw->genomeSequences[genomeSequenceId], sw->genomeLengths[genomeSequenceId]);
-  printf("\n");
+  //printf("\t\t\tUsing genome sequence: ");
+  //printSequenceLong(sw->genomeSequences[genomeSequenceId], sw->genomeLengths[genomeSequenceId]);
+  //printf("\n");
   for (unsigned int i = 1; i <= MIN(parameters->maxNErrors, sw->genomeLengths[genomeSequenceId]); ++i) {
     sw->matrix[0][parameters->maxNErrors+i].nucleotide = getNucleotide(sw->genomeSequences[genomeSequenceId][i], i-1);
     //printf("\t\tinsertion (0, %zu): %c\n", parameters->maxNErrors+i, "ACGT"[sw->matrix[0][parameters->maxNErrors+i].nucleotide]);
@@ -1315,7 +1357,6 @@ bool tryNoDiffSW (sw_t *sw, unsigned int genomeSequenceId) {
   //printf("\t\t\tShrinking genome to:     ");
   //printSequence(genomeSequence, sw->readLength);
   //printf("\n");
-  bwtinterval_t previousInterval;
   unsigned short genomeNucleotide;
   if (sw->readLength != sw->genomeLengths[genomeSequenceId]) {
     return false;
@@ -1323,17 +1364,12 @@ bool tryNoDiffSW (sw_t *sw, unsigned int genomeSequenceId) {
   if (memcmp(sw->readSequence, sw->genomeSequences[genomeSequenceId], sw->readLength * sizeof(unsigned short)) != 0) {
     return false;
   }
-  previousInterval = sw->genomeInterval;
   sw->alignmentSize = sw->readLength;
   //printf("\t\tFound right away!\n");
   for (unsigned int i = 0; i < sw->genomeLengths[genomeSequenceId]; ++i) {
     genomeNucleotide = sw->genomeSequences[genomeSequenceId][i];
-    bwt_2occ(bwt, previousInterval.k-1, previousInterval.l, genomeNucleotide, &sw->states[i].interval.k, &sw->states[i].interval.l);
-    sw->states[i].interval.k = bwt->L2[genomeNucleotide] + sw->states[i].interval.k + 1;
-    sw->states[i].interval.l = bwt->L2[genomeNucleotide] + sw->states[i].interval.l;
     sw->states[i].trace = MATCH | genomeNucleotide;
     sw->states[i].previousState = NULL;
-    previousInterval = sw->states[i].interval;
     //printf("\t\t\tState @ %u\n", i);
     //printState(&sw->states[i], 100);
     //printf("\n");
@@ -1342,7 +1378,7 @@ bool tryNoDiffSW (sw_t *sw, unsigned int genomeSequenceId) {
 }
 
 unsigned int getScore (sw_t *sw, unsigned int genomeSequenceId, unsigned int maxNErrors) {
-  uint_fast32_t reconstructedGenomeSequence = 0;
+  uint64_t reconstructedGenomeSequence = 0;
   unsigned short readNucleotide, genomeNucleotide;
   unsigned int readId, genomeId, xId, yId, startingYId = 2 * maxNErrors + 2, bestYId = startingYId;
   unsigned int v1, v2, v3;
@@ -1513,9 +1549,11 @@ unsigned int getScore (sw_t *sw, unsigned int genomeSequenceId, unsigned int max
     //printf("\t\t\tbacktrace: %u\n", sw->states[backtraceId].trace);
     if ((sw->states[backtraceId].trace & BACKTRACE_MASK) != INSERTION) {
       genomeNucleotide = reconstructedGenomeSequence & NUCLEOTIDE_MASK;
+      /*
       bwt_2occ(bwt, previousInterval.k-1, previousInterval.l, genomeNucleotide, &sw->states[backtraceId].interval.k, &sw->states[backtraceId].interval.l);
       sw->states[backtraceId].interval.k = bwt->L2[genomeNucleotide] + sw->states[backtraceId].interval.k + 1;
       sw->states[backtraceId].interval.l = bwt->L2[genomeNucleotide] + sw->states[backtraceId].interval.l;
+      */
       sw->states[backtraceId].previousState = NULL;
       reconstructedGenomeSequence >>= NUCLEOTIDES_BITS;
     }
@@ -1534,6 +1572,78 @@ unsigned int getScore (sw_t *sw, unsigned int genomeSequenceId, unsigned int max
 }
 
 
+typedef struct {
+  unsigned int   index;    
+  bwtinterval_t  previousIntervals[BWT_BUFFER_SIZE];
+  unsigned short nucleotides[BWT_BUFFER_SIZE];
+  bwtinterval_t  nextIntervals[BWT_BUFFER_SIZE];
+  bool           full;
+} bwt_buffer_t;
+
+void createBwtBuffer (bwt_buffer_t *bwtBuffer) {
+  bwtBuffer->index = 0;
+  bwtBuffer->full  = false;
+}
+
+void addToBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide, bwtinterval_t nextInterval) {
+  bwtBuffer->previousIntervals[bwtBuffer->index] = previousInterval;
+  bwtBuffer->nucleotides[bwtBuffer->index] = nucleotide;
+  bwtBuffer->nextIntervals[bwtBuffer->index] = nextInterval;
+  ++bwtBuffer->index;
+  if (bwtBuffer->index == BWT_BUFFER_SIZE) {
+    bwtBuffer->index = 0;
+    bwtBuffer->full = true;
+  }
+}
+
+bwtinterval_t *findInBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide) {
+  unsigned int searchIndex = 0;
+  ++stats->nBufferCalls;
+  if (bwtBuffer->index == 0) {
+    if (! bwtBuffer->full) {
+      return NULL;
+    }
+    searchIndex = BWT_BUFFER_SIZE - 1;
+  }
+  while (searchIndex != bwtBuffer->index) {
+    if (compareBwtIntervals(&previousInterval, &bwtBuffer->previousIntervals[searchIndex]) && (nucleotide == bwtBuffer->nucleotides[searchIndex])) {
+      ++stats->nBufferCallSucesses;
+      return &bwtBuffer->nextIntervals[searchIndex];
+    }
+    if (searchIndex == 0) {
+      if (! bwtBuffer->full) {
+        return NULL;
+      }
+      searchIndex = BWT_BUFFER_SIZE - 1;
+    }
+    else { 
+      --searchIndex;
+    }
+  }
+  return NULL;
+}
+
+bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short nucleotide, state_t *newState) {
+  //printf("    Going down BWT from range %" PRId64 "-%" PRIu64 " and nt %hu, preprocessed: %s\n", getStateInterval(previousState)->k, getStateInterval(previousState)->l, nucleotide, (previousState->trace & PREPROCESSED)? "true": "false");
+  bwtinterval_t *newIntervalInBuffer = findInBwtBuffer(bwtBuffer, previousState->interval, nucleotide);
+  bwtinterval_t newInterval;
+  ++stats->nDown;
+  if (newIntervalInBuffer == NULL) {
+    bwt_2occ(bwt, previousState->interval.k-1, previousState->interval.l, nucleotide, &newInterval.k, &newInterval.l);
+    newInterval.k = bwt->L2[nucleotide] + newInterval.k + 1;
+    newInterval.l = bwt->L2[nucleotide] + newInterval.l;
+  }
+  else {
+    newInterval = *newIntervalInBuffer;
+  }
+  newState->interval = newInterval;
+  addToBwtBuffer(bwtBuffer, previousState->interval, nucleotide, newInterval);
+  newState->trace = 0;
+  //if (newState->interval.k <= newState->interval.l) printf("      ok!\n");
+  return (newInterval.k <= newInterval.l);
+}
+
+
 /******* States type *******/
 /**
  * The states stores the mapping information of the prefixes of reads.
@@ -1547,15 +1657,17 @@ unsigned int getScore (sw_t *sw, unsigned int genomeSequenceId, unsigned int max
  */
 
 typedef struct {
-  state_t ***states;
-  size_t **nStates;
-  size_t *nStatesPerPosition;
-  size_t *minErrors;
-  size_t *maxErrors;
-  size_t treeSize;
-  sw_t   *sw;
+  state_t    ***states;
+  size_t      **nStates;
+  size_t       *nStatesPerPosition;
+  size_t       *minErrors;
+  size_t       *maxErrors;
+  size_t       depth;
+  sw_t         *sw;
+  bwt_buffer_t *bwtBuffer;
 } states_t;
 
+/*
 bool goDownBwt (state_t *previousState, unsigned short nucleotide, state_t *newState) {
   ++stats->nDown;
   //printf("    Going down BWT from range %" PRId64 "-%" PRIu64 " and nt %hu, preprocessed: %s\n", getStateInterval(previousState)->k, getStateInterval(previousState)->l, nucleotide, (previousState->trace & PREPROCESSED)? "true": "false");
@@ -1566,6 +1678,7 @@ bool goDownBwt (state_t *previousState, unsigned short nucleotide, state_t *newS
   newState->trace = 0;
   return (newState->interval.k <= newState->interval.l);
 }
+*/
 
 void printStates (states_t *states, size_t depth) {
   for (size_t i = 0; i < depth; ++i) {
@@ -1617,12 +1730,12 @@ size_t simplifyStates (state_t *states, size_t nStates) {
 }
 
 bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state) {
-  assert(depth <= states->treeSize + parameters->maxNErrors);
-  //printf("\t\t\tAdding one state (%" PRIu64 ", %" PRIu64 ") at (depth = %zu, # errors = %zu), %zu/%d occupied\n", state->k, state->l, depth, nErrors, states->nStates[depth][nErrors], N_STATES);
-  //printState(state, states->treeSize);
+  assert(depth <= states->depth);
+  //printf("\t\t\tAdding one state (%" PRIu64 ", %" PRIu64 ") at (depth = %zu, # errors = %zu), %zu/%d occupied\n", state->interval.k, state->interval.l, depth, nErrors, states->nStates[depth][nErrors], N_STATES); fflush(stdout);
+  //printState(state, states->depth);
   if (states->nStates[depth][nErrors] == N_STATES-1) {
-    //printf("Exiting because # states = %zu >= %i at depth %zu with %zu errors, before simplification.\n", states->nStates[depth][nErrors], N_STATES, depth, nErrors);
-    //printStates(states, depth);
+    printf("Exiting because # states = %zu >= %i at depth %zu with %zu errors, before simplification.\n", states->nStates[depth][nErrors], N_STATES, depth, nErrors);
+    printStates(states, depth);
     states->nStates[depth][nErrors] = N_STATES;
     return false;
   }
@@ -1646,16 +1759,16 @@ bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state) {
 }
 
 states_t *initializeStates(size_t treeSize) {
-  size_t nStateDepth         = treeSize + 1 + parameters->maxNErrors;
-  states_t *states           = (states_t *) malloc(sizeof(states_t));
-  states->treeSize           = treeSize;
-  states->states             = (state_t ***) malloc(nStateDepth * sizeof(states_t **));
-  states->nStates            = (size_t **)   malloc(nStateDepth * sizeof(size_t *));
-  states->nStatesPerPosition = (size_t *)    calloc(nStateDepth,  sizeof(size_t));
-  states->minErrors          = (size_t *)    malloc(nStateDepth * sizeof(size_t));
-  states->maxErrors          = (size_t *)    malloc(nStateDepth * sizeof(size_t));
-  states->sw                 = (sw_t *)      malloc(sizeof(sw_t));
-  for (size_t depth = 0; depth < nStateDepth; ++depth) {
+  states_t *states           = (states_t *)     malloc(sizeof(states_t));
+  states->depth              = treeSize + 1 + parameters->maxNErrors;
+  states->states             = (state_t ***)    malloc(states->depth * sizeof(states_t **));
+  states->nStates            = (size_t **)      malloc(states->depth * sizeof(size_t *));
+  states->nStatesPerPosition = (size_t *)       calloc(states->depth,  sizeof(size_t));
+  states->minErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
+  states->maxErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
+  states->sw                 = (sw_t *)         malloc(sizeof(sw_t));
+  states->bwtBuffer          = (bwt_buffer_t *) malloc(sizeof(bwt_buffer_t));
+  for (size_t depth = 0; depth < states->depth; ++depth) {
     states->states[depth]    = (state_t **) malloc((parameters->maxNErrors+1) * sizeof(states_t *));
     states->nStates[depth]   = (size_t *)   calloc((parameters->maxNErrors+1),  sizeof(size_t));
     states->minErrors[depth] = SIZE_MAX;
@@ -1666,13 +1779,14 @@ states_t *initializeStates(size_t treeSize) {
   }
   state_t baseState = { { 0, bwt->seq_len }, 0, NULL };
   addState(states, 0, 0, &baseState);
-  createSW(states->sw, treeSize + 1 + parameters->maxNErrors);
+  createSW(states->sw, states->depth);
+  createBwtBuffer(states->bwtBuffer);
   return states;
 }
 
 void backtrackStates(states_t *states, size_t level) {
   //printf("\t\t\tBacktracking to level %zu\n", level);
-  for (size_t i = level; i < states->treeSize; ++i) {
+  for (size_t i = level; i <= states->depth; ++i) {
     if (states->nStatesPerPosition[i] == 0) {
       return;
     }
@@ -1686,7 +1800,7 @@ void backtrackStates(states_t *states, size_t level) {
 }
 
 void freeStates(states_t *states) {
-  for (size_t i = 0; i < states->treeSize; ++i) {
+  for (size_t i = 0; i < states->depth; ++i) {
     for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
       free(states->states[i][j]);
     }
@@ -1771,6 +1885,7 @@ typedef struct {
 
 void printPath (path_t *path) {
   assert(path->depth <= path->maxDepth);
+  printf("Read: %s\n", path->read + path->readPos);
   for (size_t i = 0; i < path->depth; ++i) {
     assert(path->nucleotides[i] < N_NUCLEOTIDES);
     printf("%c ", "ACGT"[(int) path->nucleotides[i]]);
@@ -1992,6 +2107,7 @@ bool goNextTree (const tree_t *tree, states_t *states, path_t *path, bool mappab
   }
   //printf("  Going right\n");
   //printStates(states, path->depth);
+  //printPath(path);
   if (! goRightTree(tree, path)) {
     return false;
   }
@@ -2008,108 +2124,6 @@ void writeQname (outputSam_t *outputSam, count_t *counts) {
   }
 }
 
-/**
- * Print one line in the SAM file
- */
-void printReadLine (unsigned int flag, char *chrName, int64_t pos, char *cigar, char *seq, char *qual, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, outputSam_t *outputSam) {
-  fprintf(outputSam->file, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", outputSam->qname, flag, chrName, pos, computeMapq(nHits, nErrors), cigar, seq, qual, nHits, hitId, nHits, nErrors);
-}
-
-/**
- * Print a read, which maps only once, and with no error
- */
-void printReadUniqueNoError (int strand, char *chrName, int64_t pos, size_t readLength, count_t *counts, outputSam_t *outputSam) {
-  unsigned int flag = 0;
-  char *seq  = outputSam->forwardSeq;
-  char *qual = outputSam->forwardQual;
-  sprintf(cigar, "%zuM", readLength);
-  if (strand == 0) {
-    reverseComplementSequence(outputSam->forwardSeq, outputSam->backwardSeq, readLength);
-    reverseSequence(outputSam->forwardQual, outputSam->backwardQual, readLength);
-    flag = CIGAR_REVERSE;
-    seq  = outputSam->backwardSeq;
-    qual = outputSam->backwardQual;
-  }
-  writeQname(outputSam, counts);
-  printReadLine(qname, flag, chrName, pos, 40, cigar, seq, qual, 1, 1, 0, outputSam);
-  //fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t40\t%zuM\t*\t0\t0\t%s\t%s\tNH:i:1\tHI:i:1\tIH:i:1\tNM:i:0\n", qname, flag, chrName, pos, readLength, seq, qual);
-}
-
-/**
- * Collect information before printing read
- */
-void preparePrintRead (size_t depth, uint64_t pos, int rid, int strand, char *qname, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, outputSam_t *outputSam) {
-  char *seq, *qual, *cigar;
-  unsigned int flag = (hitId == 0)? 0: CIGAR_SECONDARY_HIT;
-  if (strand == 0) {
-    flag |= CIGAR_REVERSE;
-    if (outputSam->backwardSeq[0] == 0) reverseComplementSequence(outputSam->forwardSeq, outputSam->backwardSeq, depth);
-    if (outputSam->backwardQual[0] == 0) reverseSequence(outputSam->forwardQual, outputSam->backwardQual, depth);
-    seq   = outputSam->backwardSeq;
-    qual  = outputSam->backwardQual;
-    cigar = outputSam->backwardCigar;
-  }
-  else {
-    seq   = outputSam->forwardSeq;
-    qual  = outputSam->forwardQual;
-    cigar = outputSam->forwardCigar;
-  }
-  printReadLine(qname, flag, bns->anns[rid].name, pos, cigar, seq, qual, nHits, hitId, nErrors, outputSam);
-}
-
-size_t computeBacktrace (state_t *state, char *backtraceCigar, unsigned char *backtraceLengths) {
-  size_t backtraceSize = 0;
-  while (state->previousState != NULL) {
-    char cigar = CIGAR[state->trace >> BACKTRACE_OFFSET];
-    if ((backtraceSize == 0) || (backtraceCigar[backtraceSize-1] != cigar)) {
-      backtraceCigar[backtraceSize] = cigar;
-      backtraceLengths[backtraceSize] = 1;
-      ++backtraceSize;
-    }
-    else {
-      ++backtraceLengths[backtraceSize-1];
-    }
-    state = state->previousState;
-  }
-  return backtraceSize;
-}
-
-void computeCigar (char *backtraceCigar, unsigned char *backtraceLengths, size_t backtraceSize, char *forwardCigar, char *backwardCigar) {
-  size_t forwardCigarSize = 0;
-  size_t backwardCigarSize = 0;
-  //TODO Optimize this
-  forwardCigarSize = backwardCigarSize = 0;
-  for (size_t backtraceId = 0; backtraceId < backtraceSize; ++backtraceId) {
-    forwardCigarSize  += sprintf(forwardCigar+forwardCigarSize,   "%i%c", backtraceLengths[backtraceId], backtraceCigar[backtraceId]);
-    backwardCigarSize += sprintf(backwardCigar+backwardCigarSize, "%i%c", backtraceLengths[backtraceSize-backtraceId-1], backtraceCigar[backtraceSize-backtraceId-1]);
-  }
-  forwardCigar[forwardCigarSize] = 0;
-  backwardCigar[backwardCigarSize] = 0;
-}
-
-/**
- * Print all the reads in a given state
- */
-void printReadState (state_t *state, size_t depth, char *qname, char *forwardCigar, char *backwardCigar, char *forwardSeq, char *backwardSeq, char *forwardQual, char *backwardQual, bwtint_t nHits, unsigned int nErrors, outputSam_t *outputSam) {
-  unsigned char backtraceLengths[255];
-  char backtraceCigar[255];
-  size_t backtraceSize;
-  unsigned int hitId = 0;
-  int64_t pos;
-  int strand, rid;
-  if (nErrors != 0) {
-    backtraceSize = computeBacktrace(state, backtraceCigar, backtraceLengths);
-    computeCigar(backtraceCigar, backtraceLengths, backtraceSize, forwardCigar, backwardCigar);
-  }
-  for (bwtint_t bwtint = getStateInterval(state)->k; bwtint <= getStateInterval(state)->l; ++bwtint) {
-    ++hitId;
-    pos = bwa_sa2pos(bns, bwt, bwtint, depth, &strand);
-    rid = bns_pos2rid(bns, pos);
-    pos = pos - bns->anns[rid].offset + 1;
-    preparePrintRead(depth, pos, rid, strand, qname, forwardCigar, backwardCigar, forwardSeq, backwardSeq, forwardQual, backwardQual, nHits, hitId, nErrors, outputSam);
-  }
-}
-
 unsigned int computeMapq (unsigned int nHits, unsigned int nErrors) {
   if ((nHits > 1) || (nErrors >= 40)) {
     return 0;
@@ -2120,19 +2134,92 @@ unsigned int computeMapq (unsigned int nHits, unsigned int nErrors) {
 }
 
 /**
+ * Print one line in the SAM file
+ */
+void printReadLine (bool forward, unsigned int flag, char *chrName, int64_t pos, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, outputSam_t *outputSam) {
+  char *cigar, *seq, *qual;
+  if (! outputSam->isBackwardSet) {
+    computeReverseComplement(outputSam);
+  }
+  cigar = (forward)? outputSam->forwardCigar: outputSam->backwardCigar;
+  seq   = (forward)? outputSam->forwardSeq:   outputSam->backwardSeq;
+  qual  = (forward)? outputSam->forwardQual:  outputSam->backwardQual;
+  fprintf(outputSam->file, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", outputSam->qname, flag, chrName, pos, computeMapq(nHits, nErrors), cigar, seq, qual, nHits, hitId, nHits, nErrors);
+}
+
+/**
+ * Print a read, which maps only once, and with no error
+ */
+void printReadUniqueNoError (int strand, char *chrName, int64_t pos, size_t readLength, outputSam_t *outputSam) {
+  unsigned int flag = 0;
+  setCigarNoError(outputSam, readLength);
+  if (strand == 0) {
+    flag = CIGAR_REVERSE;
+  }
+  printReadLine(strand != 0, flag, chrName, pos, 1, 1, 0, outputSam);
+  //fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t40\t%zuM\t*\t0\t0\t%s\t%s\tNH:i:1\tHI:i:1\tIH:i:1\tNM:i:0\n", qname, flag, chrName, pos, readLength, seq, qual);
+}
+
+/**
+ * Collect information before printing read
+ */
+void preparePrintRead (uint64_t pos, int rid, int strand, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, outputSam_t *outputSam) {
+  unsigned int flag = (hitId == 0)? 0: CIGAR_SECONDARY_HIT;
+  if (strand == 0) {
+    flag |= CIGAR_REVERSE;
+  }
+  printReadLine(strand != 0, flag, bns->anns[rid].name, pos, nHits, hitId, nErrors, outputSam);
+}
+
+void computeBacktrace (state_t *state, outputSam_t *outputSam) {
+  assert(state != NULL);
+  outputSam->backtraceSize = 0;
+  while (state->previousState != NULL) {
+    //printState(state, 101); fflush(stdout);
+    char cigar = CIGAR[state->trace >> BACKTRACE_OFFSET];
+    if ((outputSam->backtraceSize == 0) || (outputSam->backtraceCigar[outputSam->backtraceSize-1] != cigar)) {
+      outputSam->backtraceCigar[outputSam->backtraceSize] = cigar;
+      outputSam->backtraceLengths[outputSam->backtraceSize] = 1;
+      ++outputSam->backtraceSize;
+    }
+    else {
+      ++outputSam->backtraceLengths[outputSam->backtraceSize-1];
+    }
+    state = state->previousState;
+  }
+}
+
+/**
+ * Print all the reads in a given state
+ */
+void printReadState (state_t *state, size_t depth, bwtint_t nHits, unsigned int nErrors, outputSam_t *outputSam) {
+  unsigned int hitId = 0;
+  int64_t pos;
+  int strand, rid;
+  if (nErrors != 0) {
+    //printf("depth: %zu\n", depth);
+    computeBacktrace(state, outputSam);
+    computeCigar(outputSam);
+  }
+  for (bwtint_t bwtint = getStateInterval(state)->k; bwtint <= getStateInterval(state)->l; ++bwtint) {
+    ++hitId;
+    pos = bwa_sa2pos(bns, bwt, bwtint, depth, &strand);
+    rid = bns_pos2rid(bns, pos);
+    pos = pos - bns->anns[rid].offset + 1;
+    preparePrintRead(pos, rid, strand, nHits, hitId, nErrors, outputSam);
+  }
+}
+
+/**
  * Print read in SAM format
  */
 void printRead (states_t *states, path_t *path, char *quality, count_t *counts, outputSam_t *outputSam) {
+  assert(path->depth <= path->maxDepth);
   size_t depth = path->depth;
   int strand, rid;
-  char qname[255];
   int64_t pos;
-  char forwardCigar[255];
-  char backwardCigar[255];
-  char *forwardSeq = path->read + path->readPos;
-  char *backwardSeq = NULL;
-  char *forwardQual = quality;
-  char *backwardQual = NULL;
+  char *seq = path->read + path->readPos;
+  char *qual = quality;
   bwtint_t nHits = 0;
   unsigned int nErrors = states->minErrors[depth];
   size_t nStates = states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
@@ -2142,32 +2229,33 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   //printf("Read:    %s\n", forwardSeq);
   assert(strlen(quality) == depth);
   //printf("Printing read\n");
-  //printPath(path);
+  //printPath(path); fflush(stdout);
+  //printStates(states, path->depth+1); fflush(stdout);
   writeQname(outputSam, counts);
+  outputSam->isBackwardSet = false;
+  //printf("depth: %zu/%zu, # states: %zu, nErrors: %u, Seq: %s, qual: %s\n", depth, path->maxDepth, nStates, nErrors, seq, qual); fflush(stdout);
+  //printState(&theseStates[nStates-1], path->depth); fflush(stdout);
+  memcpy(outputSam->forwardSeq,  seq,  (depth+1) * sizeof(char));
+  memcpy(outputSam->forwardQual, qual, (depth+1) * sizeof(char));
   for (size_t i = 0; i < nStates; ++i) {
     nHits += theseStates[i].interval.l - theseStates[i].interval.k + 1;
   }
   if (nHits > parameters->maxNHits) {
-    fprintf(outputSam->file, "%s\t4\t*\t0\t0\t*\t*\t0\t0\t%s\t%s\tNH:i:%lu\tNM:i:%u\n", qname, forwardSeq, forwardQual, nHits, nErrors);
+    fprintf(outputSam->file, "%s\t4\t*\t0\t0\t*\t*\t0\t0\t%s\t%s\tNH:i:%lu\tNM:i:%u\n", outputSam->qname, seq, qual, nHits, nErrors);
     return;
   }
   if ((nHits == 1) && (nErrors == 0)) {
     pos = bwa_sa2pos(bns, bwt, theseStates[0].interval.k, depth, &strand);
     rid = bns_pos2rid(bns, pos);
     pos = pos - bns->anns[rid].offset + 1;
-    printReadUniqueNoError(strand, bns->anns[rid].name, pos, depth, forwardSeq, quality, counts, outputSam);
+    printReadUniqueNoError(strand, bns->anns[rid].name, pos, depth, outputSam);
     return;
   }
-  if (nErrors == 0) {
-    sprintf(forwardCigar, "%zu=", depth);
-    strcpy(backwardCigar, forwardCigar);
-  }
   //printf("Read: %s, read length: %zu\n", forwardSeq, readLength);
+  //printStates(states, depth);
   for (size_t stateId = 0; stateId < nStates; ++stateId) {
-    printReadState(&theseStates[stateId], path->depth, qname, computeMapq(nHits, nErrors), forwardCigar, backwardCigar, forwardSeq, backwardSeq, forwardQual, backwardQual, nHits, nErrors, outputSam);
+    printReadState(&theseStates[stateId], path->depth, nHits, nErrors, outputSam);
   }
-  if (backwardSeq)  free(backwardSeq);
-  if (backwardQual) free(backwardQual);
 }
 
 /**
@@ -2186,7 +2274,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   */
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
     previousState = &states->states[depth-1][nErrors][stateId];
-    if (goDownBwt(previousState, nt, &nextState)) {
+    if (goDownBwt(states->bwtBuffer, previousState, nt, &nextState)) {
       mapFound = true;
       nextState.trace        |= MATCH;
       nextState.previousState = previousState;
@@ -2226,7 +2314,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
       return false;
     }
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-      if (goDownBwt(&state, nt, newState)) {
+      if (goDownBwt(states->bwtBuffer, &state, nt, newState)) {
         //addState(states, depth-1, nErrors, &newState);
         if (nt != path->nucleotides[depth-1]) {
           //printState(newState, path->maxDepth);
@@ -2243,7 +2331,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
   for (size_t stateId = 0; stateId < states->nStates[depth][nErrors-1]; ++stateId) {
     state_t *state = &states->states[depth][nErrors-1][stateId];
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-      if (goDownBwt(state, nt, newState)) {
+      if (goDownBwt(states->bwtBuffer, state, nt, newState)) {
         newState->trace        |= DELETION | nt;
         newState->previousState = state;
         if (! addState(states, depth, nErrors, newState)) {
@@ -2324,7 +2412,8 @@ void mapWithErrors (states_t *states, path_t *path) {
 bool shortCutCondition (const states_t *states, const tree_t *tree, const path_t *path) {
   if (path->depth < TREE_BASE_SIZE) return false;
   if (path->edgeLength != 0) return false;
-  if (isCellUnbranched(tree, &tree->cells[path->cellIds[path->nCells]])) return false;
+  if (isTerminal(&tree->cells[path->cellIds[path->nCells]])) return false;
+  if (! isCellUnbranched(tree, &tree->cells[path->cellIds[path->nCells]])) return false;
   //if (getNChildren(&tree->cells[path->cellIds[path->nCells]]) != 1) return false;
   unsigned int nStates = 0;
   for (unsigned int nErrors = states->minErrors[path->depth]; nErrors <= states->maxErrors[path->depth]; ++nErrors) {
@@ -2338,54 +2427,80 @@ bool shortCutCondition (const states_t *states, const tree_t *tree, const path_t
 }
 
 bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam_t *outputSam) {
-  //printf("    Entering tryShortCuts will cell %" PRIu64 " at depth %zu, last nt %i, and read pos %zu\n", path->cellIds[path->nCells], path->depth, path->nucleotides[path->depth-1], path->readPos);
+  //printf("    Entering tryShortCuts will cell %" PRIu64 " at depth %zu, last nt %i, and read pos %zu, edge len: %zu\n", path->cellIds[path->nCells], path->depth, path->nucleotides[path->depth-1], path->readPos, path->edgeLength);
+  //printPath(path);
   state_t bestStates[2 * MAX_EDGE_LENGTH];
   unsigned int currentNErrors, bestNErrors = parameters->maxNErrors + 1, baseNErrors = 0;
   unsigned int bestStateId = 0;
   unsigned int alignmentSize = 0;
   unsigned int genomeAlignmentSize;
   unsigned int nGenomeSequences;
+  unsigned int previousDepth = path->depth;
+  unsigned int previousNCells = path->nCells;
+  unsigned int previousReadPos = path->readPos;
+  uint64_t     bestPos = 0;
+  int          bestStrand = 0;
+  int          rid;
+  char         cigar;
   state_t *previousState;
-  cell_t *cell = &tree->cells[path->cellIds[path->nCells]];
+  uint64_t cellId = path->cellIds[path->nCells];
+  cell_t *cell = &tree->cells[cellId];
   edge_t *edge = getFirstEdge(cell);
   assert(edge != NULL);
   unsetReadSequence(states->sw);
   do {
     assert(edge->length != 0);
+    path->edges[path->nCells] = *edge;
+    path->cellIds[++path->nCells] = edge->cellId;
     addReadSequence(states->sw, edge->sequence, edge->length);
-    cell = &tree->cells[edge->cellId];
+    cellId = edge->cellId;
+    cell = &tree->cells[cellId];
     edge = getFirstEdge(cell);
   }
-  while (isSetEdge(edge));
-  // TODO: store all the best paths
-  for (unsigned int nErrors = states->minErrors[path->depth]; (nErrors <= states->maxErrors[path->depth]) && (nErrors <= bestNErrors); ++nErrors) {
+  while (edge != NULL);
+  //TODO store all the best paths instead
+  for (unsigned int nErrors = states->minErrors[previousDepth]; (nErrors <= states->maxErrors[previousDepth]) && (nErrors <= bestNErrors); ++nErrors) {
     //printf("      Trying with %u errors\n", nErrors);
-    states->nStates[path->depth][nErrors] = simplifyStates(states->states[path->depth][nErrors], states->nStates[path->depth][nErrors]);
-    for (unsigned int stateId = 0; stateId < states->nStates[path->depth][nErrors]; ++stateId) {
-      //printf("      Trying with state #%u/%zu %p\n", stateId, states->nStates[path->depth][nErrors], &states->nStates[path->depth][nErrors]);
+    states->nStates[previousDepth][nErrors] = simplifyStates(states->states[previousDepth][nErrors], states->nStates[previousDepth][nErrors]);
+    for (unsigned int stateId = 0; stateId < states->nStates[previousDepth][nErrors]; ++stateId) {
+      //printf("      Trying with state #%u/%zu %p\n", stateId, states->nStates[previousDepth][nErrors], &states->nStates[previousDepth][nErrors]);
       //TODO: Do not store all the genome sequences
-      nGenomeSequences = setGenomeSequences(states->sw, &states->states[path->depth][nErrors][stateId]);
+      nGenomeSequences = setGenomeSequences(states->sw, &states->states[previousDepth][nErrors][stateId]);
       for (unsigned int genomeSequenceId = 0; genomeSequenceId < nGenomeSequences; ++genomeSequenceId) {
         setGenomeSequence(states->sw, genomeSequenceId);
         currentNErrors = getScore(states->sw, genomeSequenceId, bestNErrors - nErrors - 1);
         if (currentNErrors + nErrors < bestNErrors) {
-          bestNErrors = currentNErrors + nErrors;
-          baseNErrors = nErrors;
-          bestStateId = stateId;
+          bestNErrors   = currentNErrors + nErrors;
+          baseNErrors   = nErrors;
+          bestStateId   = stateId;
           alignmentSize = states->sw->alignmentSize;
+          bestPos       = states->sw->poss[genomeSequenceId];
+          bestStrand    = states->sw->strands[genomeSequenceId];
           memcpy(bestStates, states->sw->states, alignmentSize * sizeof(state_t));
         }
       }
     }
   }
   if (bestNErrors > parameters->maxNErrors) {
+    path->nCells  = previousNCells;
+    path->depth   = previousDepth;
+    path->readPos = previousReadPos;
+    //printf("    Leaving tryShortCuts wrong with cell %" PRIu64 " at depth %zu, last nt %i, and read pos %zu\n", path->cellIds[path->nCells], path->depth, path->nucleotides[path->depth-1], path->readPos);
     return false;
   }
   assert(alignmentSize > 0);
-  previousState = &states->states[path->depth][baseNErrors][bestStateId];
-  //printf("\tSize of alignment: %u, starting from %p: %lu, %u, %u\n", alignmentSize, previousState, path->depth, baseNErrors, bestStateId);
+  previousState = &states->states[previousDepth][baseNErrors][bestStateId];
+  //printf("\tSize of alignment: %u, starting from %p: %lu, %u, %u\n", alignmentSize, previousState, previousDepth, baseNErrors, bestStateId);
   currentNErrors = baseNErrors;
   genomeAlignmentSize = 0;
+  if (bestNErrors == 0) {
+    outputSam->backtraceSize       = 1;
+    outputSam->backtraceLengths[0] = path->depth;
+    outputSam->backtraceCigar[0]   = 'M';
+  }
+  else {
+    computeBacktrace(previousState, outputSam);
+  }
   for (unsigned int i = 0; i < alignmentSize; ++i) {
     bestStates[i].previousState = previousState;
     if ((bestStates[i].trace & BACKTRACE_MASK) != DELETION) {
@@ -2403,17 +2518,38 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
     }
     //printf("\tAdding state @ %lu/%u/%lu: ", path->depth, currentNErrors, states->nStates[path->depth][currentNErrors]-1);
     //printState(&states->states[path->depth][currentNErrors][states->nStates[path->depth][currentNErrors]-1], 100);
-    previousState = &states->states[path->depth][currentNErrors][states->nStates[path->depth][currentNErrors]-1];
+    previousState = &states->states[previousDepth][currentNErrors][states->nStates[previousDepth][currentNErrors]-1];
     assert(currentNErrors <= bestNErrors);
+    cigar = CIGAR[bestStates[i].trace >> BACKTRACE_OFFSET];
+    if (bestNErrors != 0) {
+      if ((outputSam->backtraceSize == 0) || (outputSam->backtraceCigar[outputSam->backtraceSize-1] != cigar)) {
+        outputSam->backtraceCigar[outputSam->backtraceSize] = cigar;
+        outputSam->backtraceLengths[outputSam->backtraceSize] = 1;
+        ++outputSam->backtraceSize;
+      }
+      else {
+        ++outputSam->backtraceLengths[outputSam->backtraceSize-1];
+      }
+    }
   }
   assert(currentNErrors == bestNErrors);
-  path->edges[path->nCells] = *edge;
-  path->edgeLength = 0;
-  ++path->nCells;
-  path->cellIds[path->nCells] = edge->cellId;
   //printStates(states, path->depth+1);
   //printPath(path);
-  preparePrintRead(path->depth, uint64_t pos, int rid, int strand, char *qname, char *forwardCigar, char *backwardCigar, char *forwardSeq, char *backwardSeq, char *forwardQual, char *backwardQual, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, FILE *outputSam);
+  writeQname(outputSam, cell->counts);
+  memcpy(outputSam->forwardSeq,  path->read + path->readPos,  (path->depth+1) * sizeof(char));
+  memcpy(outputSam->forwardQual, findQuality(&tree->qualities, cellId), (path->depth+1) * sizeof(char));
+  outputSam->isBackwardSet = false;
+  computeCigar(outputSam);
+  bestPos = (bestStrand)? bestPos + genomeAlignmentSize: bestPos - genomeAlignmentSize;
+  rid     = bns_pos2rid(bns, bestPos);
+  //printf("Seq: %s, qual: %s, strand: %i, cigar F: %s, cigar B: %s, qname: %s\n", outputSam->forwardSeq, outputSam->forwardQual, bestStrand, outputSam->forwardCigar, outputSam->backwardCigar, outputSam->qname);
+  preparePrintRead(bestPos, rid, bestStrand, 1, 1, bestNErrors, outputSam);
+  //printf("    Leaving tryShortCuts right with cell %" PRIu64 " at depth %zu, last nt %i, and read pos %zu\n", path->cellIds[path->nCells], path->depth, path->nucleotides[path->depth-1], path->readPos);
+  //printPath(path);
+  path->nCells  = previousNCells;
+  path->depth   = previousDepth;
+  path->readPos = previousReadPos;
+  backtrackStates(states, path->depth);
   return true;
 }
 
@@ -2519,20 +2655,24 @@ void _map (const tree_t *tree, states_t *states, path_t *path, outputSam_t *outp
   char *quality;
   while (true) {
     if ((mappable) && (shortCutCondition(states, tree, path))) {
-      mappable = tryShortCuts(tree, states, path, outputSam);
+      tryShortCuts(tree, states, path, outputSam);
+      mappable = false;
+      /*
       if (mappable) {
         //printf("Short cut with positive exit\n"); fflush(stdout);
         if ((quality = findQuality(&tree->qualities, path->cellIds[path->nCells])) != NULL) {
           printRead(states, path, quality, tree->cells[path->cellIds[path->nCells]].counts, outputSam);
         }
       }
+      */
     }
     else {
       // advance in the tree
+      //printf("Going to next tree\n");
       if (! goNextTree(tree, states, path, mappable)) {
         return;
       }
-      //printPath(path);
+      //printPath(path); fflush(stdout);
       //printf("%" PRIu64 ": ", path->cellIds[path->nCells]);
       //printCell(&tree->cells[path->cellIds[path->nCells]]);
       //printf("\n");
@@ -2619,7 +2759,7 @@ int main(int argc, char const ** argv) {
   }
   outputSam.file = outputSamFile;
   createOutputSam(&outputSam, tree.depth);
-  map(&tree, outputSam);
+  map(&tree, &outputSam);
   freeTree(&tree);
   freeOutputSam(&outputSam);
   bwa_idx_destroy(idx);
