@@ -64,7 +64,7 @@
 #define TREE_BASE_SIZE   8
 #define N_TREE_BASE  65536
 
-#define N_STATES        0x5000
+#define N_STATES        0x3000
 #define MANY_STATES     0x1000
 
 #define PREPROCESSED_DEPTH 15
@@ -104,7 +104,7 @@
 #define MAX_CIGAR_SIZE 510
 #define MAX_QNAME_SIZE 255
 
-#define BWT_BUFFER_SIZE 1000
+#define BWT_BUFFER_SIZE 10
 
 typedef unsigned long count_t;
 
@@ -217,7 +217,7 @@ void printStats () {
   setlocale(LC_NUMERIC, "");
   printf("Very small sequences: %'lu/%'lu\n", stats->nShortReads, stats->nReads);
   printf("# max states %'zu/%'i\n", stats->maxNStates, N_STATES);
-  printf("# buffer call successes %'lu/%'lu (%i%%)\n", stats->nBufferCallSucesses, stats->nBufferCalls, (int) (round(((double) stats->nBufferCallSucesses) / stats->nBufferCalls)));
+  printf("# buffer call successes %'lu/%'lu (%i%%)\n", stats->nBufferCallSucesses, stats->nBufferCalls, (stats->nBufferCalls == 0)? 0: (int) (round(((double) stats->nBufferCallSucesses) / stats->nBufferCalls)));
   setlocale(LC_ALL, savedLocale);
 }
 
@@ -899,20 +899,19 @@ uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int s
 
 bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigned int fileId) {
   uint64_t cellId = 0;
-  int sequenceId;
+  int sequenceId = l - 1;
   assert(strlen(sequence) == strlen(quality));
   assert(strlen(quality) == l);
-  for (int i = 0; i < TREE_BASE_SIZE; ++i) {
-    sequenceId = l - i - 1;
-    if (sequenceId < 0) {
-      return false;
-    }
+  if (l < TREE_BASE_SIZE) {
+    return false;
+  }
+  for (int i = 0; i < TREE_BASE_SIZE; ++i, --sequenceId) {
     cellId <<= NUCLEOTIDES_BITS;
     cellId += CHAR_TO_DNA5[(int) sequence[sequenceId]];
   }
   //printf("First id: %lu, %s\n", cellId, sequence);
   assert(cellId < N_TREE_BASE);
-  cellId = addSequenceFollow(tree, cellId, sequence, --sequenceId);
+  cellId = addSequenceFollow(tree, cellId, sequence, sequenceId);
   setQuality(tree, cellId, l, quality, fileId);
   tree->depth = MAX(tree->depth, l);
   return true;
@@ -1157,6 +1156,12 @@ struct state_t {
   unsigned char trace;
   struct state_t *previousState;
 };
+
+void setState (state_t *state, bwtinterval_t *interval, unsigned char trace, state_t *previousState) {
+  state->interval      = *interval;
+  state->trace         = trace;
+  state->previousState = previousState;
+}
 
 bwtinterval_t *getStateInterval (state_t *state) {
   return &state->interval;
@@ -1601,6 +1606,7 @@ void addToBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, un
 }
 
 bwtinterval_t *findInBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide) {
+  return NULL;
   unsigned int searchIndex = 0;
   ++stats->nBufferCalls;
   if (bwtBuffer->index == 0) {
@@ -1627,24 +1633,21 @@ bwtinterval_t *findInBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousI
   return NULL;
 }
 
-bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short nucleotide, state_t *newState) {
+bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short nucleotide, bwtinterval_t *newInterval) {
   //printf("    Going down BWT from range %" PRId64 "-%" PRIu64 " and nt %hu, preprocessed: %s\n", getStateInterval(previousState)->k, getStateInterval(previousState)->l, nucleotide, (previousState->trace & PREPROCESSED)? "true": "false");
   bwtinterval_t *newIntervalInBuffer = findInBwtBuffer(bwtBuffer, previousState->interval, nucleotide);
-  bwtinterval_t newInterval;
   ++stats->nDown;
   if (newIntervalInBuffer == NULL) {
-    bwt_2occ(bwt, previousState->interval.k-1, previousState->interval.l, nucleotide, &newInterval.k, &newInterval.l);
-    newInterval.k = bwt->L2[nucleotide] + newInterval.k + 1;
-    newInterval.l = bwt->L2[nucleotide] + newInterval.l;
+    bwt_2occ(bwt, previousState->interval.k-1, previousState->interval.l, nucleotide, &newInterval->k, &newInterval->l);
+    newInterval->k = bwt->L2[nucleotide] + newInterval->k + 1;
+    newInterval->l = bwt->L2[nucleotide] + newInterval->l;
   }
   else {
-    newInterval = *newIntervalInBuffer;
+    *newInterval = *newIntervalInBuffer;
   }
-  newState->interval = newInterval;
-  addToBwtBuffer(bwtBuffer, previousState->interval, nucleotide, newInterval);
-  newState->trace = 0;
+  //addToBwtBuffer(bwtBuffer, previousState->interval, nucleotide, newInterval);
   //if (newState->interval.k <= newState->interval.l) printf("      ok!\n");
-  return (newInterval.k <= newInterval.l);
+  return (newInterval->k <= newInterval->l);
 }
 
 
@@ -1742,24 +1745,42 @@ bool canMerge (state_t *state1, state_t *state2) {
   return true;
 }
 
-size_t simplifyStates (state_t *states, size_t nStates) {
-  if (nStates <= 1) return nStates;
+void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
+  //return nStates;
+  assert(depth < states->depth);
+  assert(nErrors <= states->maxErrors[depth]);
+  size_t previousNStates = states->nStates[depth][nErrors];
+  size_t nextNStates = 0;
+  state_t *theseStates = states->states[depth][nErrors];
+  if (previousNStates <= 1) {
+    return;
+  }
   //TODO check that the pointers are good!
   //printf("\t\t\t\tSimplify states from %zu ", nStates);
-  qsort(states, nStates, sizeof(state_t), sortCompareStates);
-  size_t firstStateId = 0;
-  for (size_t secondStateId = 1; secondStateId < nStates; ++secondStateId) {
-    if (! areStatesEqual(&states[firstStateId], &states[secondStateId])) {
+  //printf("Entering Simplify States @ depth %zu with %zu errors and %zu elements.\n", depth, nErrors, previousNStates); fflush(stdout);
+  qsort(theseStates, previousNStates, sizeof(state_t), sortCompareStates);
+  for (size_t secondStateId = 1; secondStateId < previousNStates; ++secondStateId) {
+    //printf("\tCurrent state: %zu/%zu/%zu\n", nextNStates, secondStateId, previousNStates); fflush(stdout);
+    if (! areStatesEqual(&theseStates[nextNStates], &theseStates[secondStateId])) {
     //if (! canMerge(&states[firstStateId], &states[secondStateId])) {
-      ++firstStateId;
-      states[firstStateId] = states[secondStateId];
+      ++nextNStates;
+      if (nextNStates < secondStateId) {
+        theseStates[nextNStates] = theseStates[secondStateId];
+      }
+      assert(nextNStates <= previousNStates);
+      assert(nextNStates <= secondStateId);
+      assert(secondStateId < N_STATES);
     }
   }
+  ++nextNStates;
   //printf("to %zu\n", firstStateId+1);
-  return (firstStateId+1);
+  states->nStates[depth][nErrors] = nextNStates;
+  assert(states->nStatesPerPosition[depth] >= previousNStates - nextNStates);
+  states->nStatesPerPosition[depth] -= previousNStates - nextNStates;
 }
 
 void heapifyStates (state_t *states, size_t nStates) {
+  return;
   size_t currentId = nStates-1;
   size_t parentId  = getParentStateId(currentId);
   while ((currentId != 0) && (stateComp(&states[parentId], &states[currentId]) > 0)) { 
@@ -1769,6 +1790,7 @@ void heapifyStates (state_t *states, size_t nStates) {
 }
 
 bool isStateInserted (state_t *states, size_t nStates, state_t *state) {
+  return false;
   size_t currentId = 0;
   int cmp;
   while (currentId < nStates) {
@@ -1786,20 +1808,22 @@ bool isStateInserted (state_t *states, size_t nStates, state_t *state) {
   return false;
 }
 
-bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state) {
+state_t *addState (states_t *states, size_t depth, size_t nErrors) {
   assert(depth <= states->depth);
   //printf("\t\t\tAdding one state (%" PRIu64 ", %" PRIu64 ") at (depth = %zu, # errors = %zu), %zu/%d occupied\n", state->interval.k, state->interval.l, depth, nErrors, states->nStates[depth][nErrors], N_STATES); fflush(stdout);
   //printState(state, states->depth);
+  /*
   if (isStateInserted(states->states[depth][nErrors], states->nStates[depth][nErrors], state)) {
-    return true;
+    return NULL;
   }
+  */
   if (states->nStates[depth][nErrors] == N_STATES-1) {
     printf("Exiting because # states = %zu >= %i at depth %zu with %zu errors, before simplification.\n", states->nStates[depth][nErrors], N_STATES, depth, nErrors);
     printStates(states, depth);
     states->nStates[depth][nErrors] = N_STATES;
-    return false;
+    return NULL;
   }
-  states->states[depth][nErrors][states->nStates[depth][nErrors]] = *state;
+  //states->states[depth][nErrors][states->nStates[depth][nErrors]] = *state;
   ++states->nStates[depth][nErrors];
   ++states->nStatesPerPosition[depth];
   stats->maxNStates = MAX(stats->maxNStates, states->nStates[depth][nErrors]);
@@ -1816,7 +1840,7 @@ bool addState(states_t *states, size_t depth, size_t nErrors, state_t *state) {
       states->maxErrors[depth] = nErrors;
     }
   }
-  return true;
+  return &states->states[depth][nErrors][states->nStates[depth][nErrors]-1];
 }
 
 states_t *initializeStates(size_t treeSize) {
@@ -1838,8 +1862,11 @@ states_t *initializeStates(size_t treeSize) {
       states->states[depth][nErrors] = (state_t *) malloc(N_STATES * sizeof(states_t));
     }
   }
-  state_t baseState = { { 0, bwt->seq_len }, 0, NULL };
-  addState(states, 0, 0, &baseState);
+  state_t *baseState = addState(states, 0, 0);
+  baseState->interval.k    = 0;
+  baseState->interval.l    = bwt->seq_len;
+  baseState->trace         = 0;
+  baseState->previousState = NULL;
   createSW(states->sw, states->depth);
   createBwtBuffer(states->bwtBuffer);
   return states;
@@ -2283,8 +2310,10 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   char *qual = quality;
   bwtint_t nHits = 0;
   unsigned int nErrors = states->minErrors[depth];
-  size_t nStates = states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
   state_t *theseStates = states->states[depth][nErrors];
+  size_t nStates;
+  simplifyStates(states, depth, nErrors);
+  nStates = states->nStates[depth][nErrors];
   //printf("Quality size: %zu vs %zu\n", strlen(quality), depth);
   //printf("Quality: %s (%p)\n", quality, quality);
   //printf("Read:    %s\n", forwardSeq);
@@ -2325,7 +2354,8 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
 bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t nErrors) {
   assert(depth > 0);
   state_t *previousState;
-  state_t nextState;
+  state_t *nextState;
+  bwtinterval_t nextInterval;
   bool mapFound = false;
   //printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]);
   /*
@@ -2335,15 +2365,15 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   */
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
     previousState = &states->states[depth-1][nErrors][stateId];
-    if (goDownBwt(states->bwtBuffer, previousState, nt, &nextState)) {
+    if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
       mapFound = true;
-      nextState.trace        |= MATCH;
-      nextState.previousState = previousState;
       //printState(&nextState, depth);
-      if (! addState(states, depth, nErrors, &nextState)) {
+      nextState = addState(states, depth, nErrors);
+      if (nextState == NULL) {
         //printf("      cannot add state\n");
         return false;
       }
+      setState(nextState, &nextInterval, MATCH, previousState);
     }
   }
   //printf("    found map: %s\n", mapFound ? "true" : "false");
@@ -2355,55 +2385,57 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
  * Supposes that mappings at depth-1 with nErrors are computed.
  * Supposes that mappings at depth with nErrors-1 are computed.
  */
-bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, state_t *newState) {
+bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
   //printf("    depth %zu, %zu errors, nucleotide %c, %zu states, min errors: %zu\n", depth, nErrors, "ACGT"[path->nucleotides[depth-1]],  states->nStates[depth-1][nErrors-1], states->minErrors[depth-1]);
   //printf("      Path is: ");
   //for (size_t i = 0; i < depth; ++i) putchar("ACGT"[path->nucleotides[i]]);
   //putchar('\n');
   //TODO may be skipped?
+  bwtinterval_t nextInterval;
+  state_t *previousState;
+  state_t *nextState;
   if ((states->maxErrors[depth] != SIZE_MAX) && (states->maxErrors[depth] >= nErrors)) {
     //printf("      first case: %zu/%zu/%zu %zu/%i\n", states->maxErrors[depth], nErrors, SIZE_MAX, states->nStates[depth][nErrors], N_STATES);
     return (states->nStates[depth][nErrors] < N_STATES);
   }
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors-1]; ++stateId) {
-    state_t state = states->states[depth-1][nErrors-1][stateId];
+    previousState = &states->states[depth-1][nErrors-1][stateId];
     //printState(state, path->maxDepth);
     // add insertion
-    if (! hasTrace(&state, DELETION)) {
-      state.trace         = (state.trace & PREPROCESSED) | INSERTION;
-      state.previousState = &states->states[depth-1][nErrors-1][stateId];
-      if (! addState(states, depth, nErrors, &state)) {
-        //printf("      second case\n");
+    if (! hasTrace(previousState, DELETION)) {
+      nextState = addState(states, depth, nErrors);
+      if (nextState == NULL) {
         return false;
       }
+      setState(nextState, &previousState->interval, INSERTION, previousState);
     }
     // add mismatches
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-      if (goDownBwt(states->bwtBuffer, &state, nt, newState)) {
+      if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
         //addState(states, depth-1, nErrors, &newState);
         if (nt != path->nucleotides[depth-1]) {
           //printState(newState, path->maxDepth);
-          newState->trace        |= MISMATCH | nt;
-          newState->previousState = &states->states[depth-1][nErrors-1][stateId];
-          if (! addState(states, depth, nErrors, newState)) {
+          nextState = addState(states, depth, nErrors);
+          if (nextState == NULL) {
             //printf("      third case\n");
             return false;
           }
+          setState(nextState, &nextInterval, MISMATCH | nt, previousState);
         }
       }
     }
   }
   // add deletions
   for (size_t stateId = 0; stateId < states->nStates[depth][nErrors-1]; ++stateId) {
-    state_t *state = &states->states[depth][nErrors-1][stateId];
-    if (! hasTrace(state, INSERTION)) {
+    previousState = &states->states[depth][nErrors-1][stateId];
+    if (! hasTrace(previousState, INSERTION)) {
       for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-        if (goDownBwt(states->bwtBuffer, state, nt, newState)) {
-          newState->trace        |= DELETION | nt;
-          newState->previousState = state;
-          if (! addState(states, depth, nErrors, newState)) {
+        if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
+          nextState = addState(states, depth, nErrors);
+          if (nextState == NULL) {
             return false;
           }
+          setState(nextState, &nextInterval, DELETION | nt, previousState);
         }
       }
     }
@@ -2432,7 +2464,6 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth, st
  * Map the last nucleotide, with one more error, at depth path->depth-1.
  */
 bool addError (states_t *states, path_t *path) {
-  state_t newState;
   size_t nErrors = states->minErrors[path->depth-1] + 1;
   size_t firstDepth;
   bool firstDepthFound = false;
@@ -2446,7 +2477,7 @@ bool addError (states_t *states, path_t *path) {
   if (firstDepthFound) firstDepth += 2;
   //printf("  adding error with %zu @ %zu from %zu\n", nErrors, path->depth, firstDepth);
   for (size_t depth = firstDepth; depth <= path->depth; ++depth) {
-    if (! _addError(states, path, nErrors, depth, &newState)) {
+    if (! _addError(states, path, nErrors, depth)) {
       //printf("    too many errors\n");
       return false;
     }
@@ -2460,11 +2491,10 @@ bool addError (states_t *states, path_t *path) {
 void mapWithErrors (states_t *states, path_t *path) {
   assert(path->depth <= TREE_BASE_SIZE);
   assert(path->depth > 0);
-  state_t newState;
   mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1]);
   //TODO: Optimize this
   for (unsigned int nErrors = 1; nErrors <= parameters->maxNErrors; ++nErrors) {
-    _addError(states, path, nErrors, path->depth, &newState);
+    _addError(states, path, nErrors, path->depth);
   }
   //printf("Mapping with errors\n");
   //printStates(states, path->depth-1);
@@ -2472,7 +2502,7 @@ void mapWithErrors (states_t *states, path_t *path) {
   //TODO check this
   if (path->depth == TREE_BASE_SIZE) {
     for (size_t nErrors = states->minErrors[TREE_BASE_SIZE]; nErrors <= states->maxErrors[TREE_BASE_SIZE]; ++nErrors) {
-      states->nStates[TREE_BASE_SIZE][nErrors] = simplifyStates(states->states[TREE_BASE_SIZE][nErrors], states->nStates[TREE_BASE_SIZE][nErrors]);
+      simplifyStates(states, TREE_BASE_SIZE, nErrors);
     }
   }
 }
@@ -2511,6 +2541,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
   int          rid;
   char         cigar;
   state_t *previousState;
+  state_t *nextState;
   uint64_t cellId = path->cellIds[path->nCells];
   cell_t *cell = &tree->cells[cellId];
   edge_t *edge = getFirstEdge(cell);
@@ -2529,7 +2560,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
   //TODO store all the best paths instead
   for (unsigned int nErrors = states->minErrors[previousDepth]; (nErrors <= states->maxErrors[previousDepth]) && (nErrors <= bestNErrors); ++nErrors) {
     //printf("      Trying with %u errors\n", nErrors);
-    states->nStates[previousDepth][nErrors] = simplifyStates(states->states[previousDepth][nErrors], states->nStates[previousDepth][nErrors]);
+    simplifyStates(states, previousDepth, nErrors);
     for (unsigned int stateId = 0; stateId < states->nStates[previousDepth][nErrors]; ++stateId) {
       //printf("      Trying with state #%u/%zu %p\n", stateId, states->nStates[previousDepth][nErrors], &states->nStates[previousDepth][nErrors]);
       //TODO: Do not store all the genome sequences
@@ -2570,25 +2601,26 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
     computeBacktrace(previousState, outputSam);
   }
   for (unsigned int i = 0; i < alignmentSize; ++i) {
-    bestStates[i].previousState = previousState;
-    if ((bestStates[i].trace & BACKTRACE_MASK) != DELETION) {
+    nextState = addState(states, path->depth, currentNErrors);
+    if (nextState == NULL) {
+      return false;
+    }
+    setState(nextState, &bestStates[i].interval, bestStates[i].trace, previousState);
+    if ((nextState->trace & BACKTRACE_MASK) != DELETION) {
       //printf("\t\tAdding nucleotide %c\n", "ACGT"[bestStates[i].trace & NUCLEOTIDE_MASK]);
       appendNucleotidePath(path, bestStates[i].trace & NUCLEOTIDE_MASK, DNA5_TO_CHAR[bestStates[i].trace & NUCLEOTIDE_MASK]);
     }
-    if (! hasTrace(&bestStates[i], MATCH)) {
+    if (! hasTrace(nextState, MATCH)) {
       ++currentNErrors;
     }
-    if (! hasTrace(&bestStates[i], INSERTION)) {
+    if (! hasTrace(nextState, INSERTION)) {
       ++genomeAlignmentSize;
-    }
-    if (! addState(states, path->depth, currentNErrors, &bestStates[i])) {
-      return false;
     }
     //printf("\tAdding state @ %lu/%u/%lu: ", path->depth, currentNErrors, states->nStates[path->depth][currentNErrors]-1);
     //printState(&states->states[path->depth][currentNErrors][states->nStates[path->depth][currentNErrors]-1], 100);
-    previousState = &states->states[previousDepth][currentNErrors][states->nStates[previousDepth][currentNErrors]-1];
+    previousState = nextState;
     assert(currentNErrors <= bestNErrors);
-    cigar = CIGAR[bestStates[i].trace >> BACKTRACE_OFFSET];
+    cigar = CIGAR[nextState->trace >> BACKTRACE_OFFSET];
     if (bestNErrors != 0) {
       if ((outputSam->backtraceSize == 0) || (outputSam->backtraceCigar[outputSam->backtraceSize-1] != cigar)) {
         outputSam->backtraceCigar[outputSam->backtraceSize] = cigar;
