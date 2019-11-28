@@ -20,8 +20,10 @@
  */
 
 typedef struct {
-  state_t    ***states;
+  state_t     **states;
+  size_t      **firstState;
   size_t      **nStates;
+  size_t       *nStatesPerError;
   size_t       *nStatesPerPosition;
   size_t       *minErrors;
   size_t       *maxErrors;
@@ -29,6 +31,15 @@ typedef struct {
   sw_t         *sw;
   bwt_buffer_t *bwtBuffer;
 } states_t;
+
+size_t getNStates(const states_t *states, size_t depth, size_t nErrors) {
+  return states->nStates[depth][nErrors];
+}
+
+state_t *getState(const states_t *states, size_t depth, size_t nErrors, size_t i) {
+  assert(i < getNStates(states, depth, nErrors));
+  return &states->states[nErrors][states->firstState[depth][nErrors]+i];
+}
 
 /*
 bool goDownBwt (state_t *previousState, unsigned short nucleotide, state_t *newState) {
@@ -70,44 +81,13 @@ unsigned int getGreaterStateId (unsigned int stateId) {
   return ((2 * stateId) + 2);
 }
 
-void swapStates(state_t *s1, state_t *s2) { 
-  state_t tmp = *s1; 
-  *s1 = *s2; 
-  *s2 = tmp; 
-} 
-
-bool areStatesEqual (state_t *state1, state_t *state2) {
-  return ((getStateInterval(state1)->k == getStateInterval(state2)->k) && (getStateInterval(state1)->l == getStateInterval(state2)->l));
-}
-
-int stateComp (const state_t *state1, const state_t *state2) {
-  int i = getStateInterval((state_t *) state1)->k - (getStateInterval((state_t *) state2)->k);
-  if (i != 0) {
-    return i;
-  }
-  return (getStateInterval((state_t *) state1)->k - (getStateInterval((state_t *) state2)->k));
-}
-
-int sortCompareStates (const void *state1, const void *state2) {
-  return (getStateInterval((state_t *) state1)->k - (getStateInterval((state_t *) state2)->k));
-}
-
-bool canMerge (state_t *state1, state_t *state2) {
-  if ((getStateInterval(state1)->l+1 < getStateInterval(state2)->k) || (getStateInterval(state1)->k+1 > getStateInterval(state2)->l)) {
-    return false;
-  }
-  getStateInterval(state1)->k = MIN(getStateInterval(state1)->k, getStateInterval(state2)->k);
-  getStateInterval(state1)->l = MAX(getStateInterval(state1)->l, getStateInterval(state2)->l);
-  return true;
-}
-
 void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
   //return nStates;
   assert(depth < states->depth);
   assert(nErrors <= states->maxErrors[depth]);
   size_t previousNStates = states->nStates[depth][nErrors];
   size_t nextNStates = 0;
-  state_t *theseStates = states->states[depth][nErrors];
+  state_t *theseStates = states->states[nErrors] + states->firstState[depth][nErrors];
   if (previousNStates <= 1) {
     return;
   }
@@ -135,8 +115,8 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
   states->nStatesPerPosition[depth] -= previousNStates - nextNStates;
 }
 
+/*
 void heapifyStates (state_t *states, size_t nStates) {
-  return;
   size_t currentId = nStates-1;
   size_t parentId  = getParentStateId(currentId);
   while ((currentId != 0) && (stateComp(&states[parentId], &states[currentId]) > 0)) { 
@@ -144,6 +124,7 @@ void heapifyStates (state_t *states, size_t nStates) {
     currentId = parentId;
   }
 }
+*/
 
 bool isStateInserted (state_t *states, size_t nStates, state_t *state) {
   return false;
@@ -173,17 +154,21 @@ state_t *addState (states_t *states, size_t depth, size_t nErrors) {
     return NULL;
   }
   */
-  if (states->nStates[depth][nErrors] == N_STATES-1) {
-    printf("Exiting because # states = %zu >= %i at depth %zu with %zu errors, before simplification.\n", states->nStates[depth][nErrors], N_STATES, depth, nErrors);
+  if (states->nStatesPerError[nErrors] == N_STATES-1) {
+    printf("Exiting because # states = %zu >= %i at depth %zu with %zu errors, before simplification.\n", states->nStatesPerError[nErrors], N_STATES, depth, nErrors);
     printStates(states, depth);
-    states->nStates[depth][nErrors] = N_STATES;
+    states->nStatesPerError[nErrors] = N_STATES;
     return NULL;
   }
   //states->states[depth][nErrors][states->nStates[depth][nErrors]] = *state;
+  if (states->nStates[depth][nErrors] == 0) {
+    states->firstState[depth][nErrors] = states->nStatesPerError[nErrors];
+  }
   ++states->nStates[depth][nErrors];
   ++states->nStatesPerPosition[depth];
-  stats->maxNStates = MAX(stats->maxNStates, states->nStates[depth][nErrors]);
-  heapifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
+  ++states->nStatesPerError[nErrors];
+  stats->maxNStates = MAX(stats->maxNStates, states->nStatesPerError[nErrors]);
+  //heapifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
   if (states->minErrors[depth] == SIZE_MAX) {
     states->minErrors[depth] = nErrors;
     states->maxErrors[depth] = nErrors;
@@ -196,27 +181,29 @@ state_t *addState (states_t *states, size_t depth, size_t nErrors) {
       states->maxErrors[depth] = nErrors;
     }
   }
-  return &states->states[depth][nErrors][states->nStates[depth][nErrors]-1];
+  return &states->states[nErrors][states->nStatesPerError[nErrors]-1];
 }
 
 states_t *initializeStates(size_t treeSize) {
   states_t *states           = (states_t *)     malloc(sizeof(states_t));
   states->depth              = treeSize + 1 + parameters->maxNErrors;
-  states->states             = (state_t ***)    malloc(states->depth * sizeof(states_t **));
+  states->states             = (state_t **)     malloc((parameters->maxNErrors+1) * sizeof(states_t *));
+  states->firstState         = (size_t **)      malloc(states->depth * sizeof(size_t *));
   states->nStates            = (size_t **)      malloc(states->depth * sizeof(size_t *));
+  states->nStatesPerError    = (size_t *)       calloc(parameters->maxNErrors+1,  sizeof(size_t));
   states->nStatesPerPosition = (size_t *)       calloc(states->depth,  sizeof(size_t));
   states->minErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
   states->maxErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
   states->sw                 = (sw_t *)         malloc(sizeof(sw_t));
   states->bwtBuffer          = (bwt_buffer_t *) malloc(sizeof(bwt_buffer_t));
   for (size_t depth = 0; depth < states->depth; ++depth) {
-    states->states[depth]    = (state_t **) malloc((parameters->maxNErrors+1) * sizeof(states_t *));
-    states->nStates[depth]   = (size_t *)   calloc((parameters->maxNErrors+1),  sizeof(size_t));
+    states->firstState[depth] = (size_t *) calloc((parameters->maxNErrors+1), sizeof(size_t));
+    states->nStates[depth]    = (size_t *) calloc((parameters->maxNErrors+1), sizeof(size_t));
     states->minErrors[depth] = SIZE_MAX;
     states->maxErrors[depth] = SIZE_MAX;
-    for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
-      states->states[depth][nErrors] = (state_t *) malloc(N_STATES * sizeof(states_t));
-    }
+  }
+  for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
+    states->states[nErrors] = (state_t *) malloc(N_STATES * sizeof(states_t));
   }
   state_t *baseState = addState(states, 0, 0);
   baseState->interval.k    = 0;
@@ -241,18 +228,27 @@ void backtrackStates(states_t *states, size_t level) {
       states->nStates[i][j] = 0;
     }
   }
+  if (level == 0) {
+    for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
+      states->nStatesPerError[j] = 0;
+    }
+  }
+  else {
+    for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
+      states->nStatesPerError[j] = states->firstState[level-1][j] + states->nStates[level-1][j];
+    }
+  }
 }
 
 void freeStates(states_t *states) {
-  for (size_t i = 0; i < states->depth; ++i) {
-    for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
-      free(states->states[i][j]);
-    }
+  for (size_t i = 0; i <= parameters->maxNErrors; ++i) {
     free(states->states[i]);
   }
   free(states->states);
   free(states->nStates);
+  free(states->firstState);
   free(states->nStatesPerPosition);
+  free(states->nStatesPerError);
   free(states->minErrors);
   free(states->maxErrors);
   free(states);

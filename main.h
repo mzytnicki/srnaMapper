@@ -30,7 +30,7 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   char *qual = quality;
   bwtint_t nHits = 0;
   unsigned int nErrors = states->minErrors[depth];
-  state_t *theseStates = states->states[depth][nErrors];
+  state_t *theseStates = getState(states, depth, nErrors, 0);
   size_t nStates;
   simplifyStates(states, depth, nErrors);
   nStates = states->nStates[depth][nErrors];
@@ -84,7 +84,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   }
   */
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
-    previousState = &states->states[depth-1][nErrors][stateId];
+    previousState = getState(states, depth-1, nErrors, stateId);
     if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
       mapFound = true;
       //printState(&nextState, depth);
@@ -119,7 +119,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
     return (states->nStates[depth][nErrors] < N_STATES);
   }
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors-1]; ++stateId) {
-    previousState = &states->states[depth-1][nErrors-1][stateId];
+    previousState = getState(states, depth-1, nErrors-1, stateId);
     //printState(state, path->maxDepth);
     // add insertion
     if (! hasTrace(previousState, DELETION)) {
@@ -147,7 +147,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
   }
   // add deletions
   for (size_t stateId = 0; stateId < states->nStates[depth][nErrors-1]; ++stateId) {
-    previousState = &states->states[depth][nErrors-1][stateId];
+    previousState = getState(states, depth, nErrors-1, stateId);
     if (! hasTrace(previousState, INSERTION)) {
       for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
         if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
@@ -228,6 +228,7 @@ void mapWithErrors (states_t *states, path_t *path) {
 }
 
 bool shortCutCondition (const states_t *states, const tree_t *tree, const path_t *path) {
+  state_t *state;
   if (path->depth < TREE_BASE_SIZE) return false;
   if (path->edgeLength != 0) return false;
   if (isTerminal(&tree->cells[path->cellIds[path->nCells]])) return false;
@@ -238,7 +239,8 @@ bool shortCutCondition (const states_t *states, const tree_t *tree, const path_t
     nStates += states->nStates[path->depth][nErrors];
     if (nStates > MAX_SW_N_STATES) return false;
     for (unsigned int stateId = 0; stateId < states->nStates[path->depth][nErrors]; ++stateId) {
-      if (states->states[path->depth][nErrors][stateId].interval.l - states->states[path->depth][nErrors][stateId].interval.k >= MAX_SW_N_SEQUENCES) return false;
+      state = getState(states, path->depth, nErrors, stateId);
+      if (state->interval.l - state->interval.k >= MAX_SW_N_SEQUENCES) return false;
     }
   }
   return true;
@@ -284,7 +286,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
     for (unsigned int stateId = 0; stateId < states->nStates[previousDepth][nErrors]; ++stateId) {
       //printf("      Trying with state #%u/%zu %p\n", stateId, states->nStates[previousDepth][nErrors], &states->nStates[previousDepth][nErrors]);
       //TODO: Do not store all the genome sequences
-      nGenomeSequences = setGenomeSequences(states->sw, &states->states[previousDepth][nErrors][stateId]);
+      nGenomeSequences = setGenomeSequences(states->sw, getState(states, previousDepth, nErrors, stateId));
       for (unsigned int genomeSequenceId = 0; genomeSequenceId < nGenomeSequences; ++genomeSequenceId) {
         setGenomeSequence(states->sw, genomeSequenceId);
         currentNErrors = getScore(states->sw, genomeSequenceId, bestNErrors - nErrors - 1);
@@ -308,7 +310,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
     return false;
   }
   assert(alignmentSize > 0);
-  previousState = &states->states[previousDepth][baseNErrors][bestStateId];
+  previousState = getState(states, previousDepth, baseNErrors, bestStateId);
   //printf("\tSize of alignment: %u, starting from %p: %u, %u/%u, %u\n", alignmentSize, previousState, previousDepth, baseNErrors, bestNErrors, bestStateId);
   currentNErrors = baseNErrors;
   genomeAlignmentSize = 0;

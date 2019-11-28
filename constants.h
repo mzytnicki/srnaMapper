@@ -33,7 +33,7 @@
 #define TREE_BASE_SIZE   8
 #define N_TREE_BASE  65536
 
-#define N_STATES        0x3000
+#define N_STATES        0x100000
 #define MANY_STATES     0x1000
 
 #define PREPROCESSED_DEPTH 15
