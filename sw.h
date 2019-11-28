@@ -12,7 +12,7 @@
  */
 typedef struct {
   unsigned int value: MAX_SW_COST_SIZE;
-  unsigned int backTrace: SW_BACKTRACE_SIZE;
+  unsigned int backTrace: BACKTRACE_SIZE;
   unsigned int nucleotide: NUCLEOTIDES_BITS;
 } sw_cell_t;
 
@@ -170,7 +170,8 @@ bool tryNoDiffSW (sw_t *sw, unsigned int genomeSequenceId) {
   //printf("\t\tFound right away!\n");
   for (unsigned int i = 0; i < sw->genomeLengths[genomeSequenceId]; ++i) {
     genomeNucleotide = sw->genomeSequences[genomeSequenceId][i];
-    sw->states[i].trace = MATCH | genomeNucleotide;
+    sw->states[i].trace         = MATCH;
+    sw->states[i].nucleotide    = genomeNucleotide;
     sw->states[i].previousState = NULL;
     //printf("\t\t\tState @ %u\n", i);
     //printState(&sw->states[i], 100);
@@ -318,7 +319,8 @@ unsigned int getScore (sw_t *sw, unsigned int genomeSequenceId, unsigned int max
   yId = bestYId;
   for (unsigned int backtraceId = 0; backtraceId < sw->alignmentSize; ++backtraceId) {
     reversedBacktraceId = sw->alignmentSize - backtraceId - 1;
-    sw->states[reversedBacktraceId].trace = (sw->matrix[xId][yId].backTrace << BACKTRACE_OFFSET) | sw->matrix[xId][yId].nucleotide;
+    sw->states[reversedBacktraceId].trace      = sw->matrix[xId][yId].backTrace;
+    sw->states[reversedBacktraceId].nucleotide = sw->matrix[xId][yId].nucleotide;
     switch(sw->matrix[xId][yId].backTrace) {
       case SW_MATCH:
       case SW_MISMATCH:
@@ -349,7 +351,7 @@ unsigned int getScore (sw_t *sw, unsigned int genomeSequenceId, unsigned int max
   for (unsigned int backtraceId = 0; backtraceId < sw->alignmentSize; ++backtraceId) {
   //for (int backtraceId = sw->alignmentSize - 1; backtraceId >= 0; --backtraceId) {
     //printf("\t\t\tbacktrace: %u\n", sw->states[backtraceId].trace);
-    if ((sw->states[backtraceId].trace & BACKTRACE_MASK) != INSERTION) {
+    if (! hasTrace(&sw->states[backtraceId], INSERTION)) {
       genomeNucleotide = reconstructedGenomeSequence & NUCLEOTIDE_MASK;
       /*
       bwt_2occ(bwt, previousInterval.k-1, previousInterval.l, genomeNucleotide, &sw->states[backtraceId].interval.k, &sw->states[backtraceId].interval.l);

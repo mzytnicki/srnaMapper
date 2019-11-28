@@ -93,7 +93,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
         //printf("      cannot add state\n");
         return false;
       }
-      setState(nextState, &nextInterval, MATCH, previousState);
+      setState(nextState, &nextInterval, MATCH, 0, previousState);
     }
   }
   //printf("    found map: %s\n", mapFound ? "true" : "false");
@@ -127,7 +127,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       if (nextState == NULL) {
         return false;
       }
-      setState(nextState, &previousState->interval, INSERTION, previousState);
+      setState(nextState, &previousState->interval, INSERTION, 0, previousState);
     }
     // add mismatches
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
@@ -140,7 +140,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
             //printf("      third case\n");
             return false;
           }
-          setState(nextState, &nextInterval, MISMATCH | nt, previousState);
+          setState(nextState, &nextInterval, MISMATCH, nt, previousState);
         }
       }
     }
@@ -155,7 +155,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
           if (nextState == NULL) {
             return false;
           }
-          setState(nextState, &nextInterval, DELETION | nt, previousState);
+          setState(nextState, &nextInterval, DELETION, nt, previousState);
         }
       }
     }
@@ -309,7 +309,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
   }
   assert(alignmentSize > 0);
   previousState = &states->states[previousDepth][baseNErrors][bestStateId];
-  //printf("\tSize of alignment: %u, starting from %p: %lu, %u, %u\n", alignmentSize, previousState, previousDepth, baseNErrors, bestStateId);
+  //printf("\tSize of alignment: %u, starting from %p: %u, %u/%u, %u\n", alignmentSize, previousState, previousDepth, baseNErrors, bestNErrors, bestStateId);
   currentNErrors = baseNErrors;
   genomeAlignmentSize = 0;
   if (bestNErrors == 0) {
@@ -325,10 +325,12 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
     if (nextState == NULL) {
       return false;
     }
-    setState(nextState, &bestStates[i].interval, bestStates[i].trace, previousState);
-    if ((nextState->trace & BACKTRACE_MASK) != DELETION) {
+    //printf("\tbest state: %c/%c\n", CIGAR[bestStates[i].trace], "ACGT"[bestStates[i].nucleotide]);
+    setState(nextState, &bestStates[i].interval, bestStates[i].trace, bestStates[i].nucleotide, previousState);
+    //printState(nextState, 101); fflush(stdout);
+    if (! hasTrace(nextState, DELETION)) {
       //printf("\t\tAdding nucleotide %c\n", "ACGT"[bestStates[i].trace & NUCLEOTIDE_MASK]);
-      appendNucleotidePath(path, bestStates[i].trace & NUCLEOTIDE_MASK, DNA5_TO_CHAR[bestStates[i].trace & NUCLEOTIDE_MASK]);
+      appendNucleotidePath(path, bestStates[i].nucleotide, DNA5_TO_CHAR[bestStates[i].nucleotide]);
     }
     if (! hasTrace(nextState, MATCH)) {
       ++currentNErrors;
@@ -340,7 +342,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
     //printState(&states->states[path->depth][currentNErrors][states->nStates[path->depth][currentNErrors]-1], 100);
     previousState = nextState;
     assert(currentNErrors <= bestNErrors);
-    cigar = CIGAR[nextState->trace >> BACKTRACE_OFFSET];
+    cigar = CIGAR[nextState->trace];
     if (bestNErrors != 0) {
       if ((outputSam->backtraceSize == 0) || (outputSam->backtraceCigar[outputSam->backtraceSize-1] != cigar)) {
         outputSam->backtraceCigar[outputSam->backtraceSize] = cigar;

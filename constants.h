@@ -44,13 +44,11 @@
 #define NO_DATA 0
 #define NO_QUALITY ((unsigned int) (-1))
 
+#define BACKTRACE_SIZE    2
 #define MATCH             0
-#define MISMATCH          4
-#define INSERTION         8
-#define DELETION         12
-#define BACKTRACE_OFFSET  2
-#define BACKTRACE_MASK   12
-#define PREPROCESSED     16
+#define MISMATCH          1
+#define INSERTION         2
+#define DELETION          3
 
 #define CIGAR_SECONDARY_HIT 0x100
 #define CIGAR_REVERSE 0x10
@@ -63,7 +61,6 @@
 #define MAX_SW_COST_SIZE 5
 #define MAX_SW_N_STATES 10
 #define MAX_SW_N_SEQUENCES 5
-#define SW_BACKTRACE_SIZE 2
 #define SW_BACKTRACE_SIZE_SIZE 5
 #define SW_MATCH         0
 #define SW_MISMATCH      1

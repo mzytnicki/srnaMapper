@@ -17,13 +17,15 @@ typedef struct state_t state_t;
 
 struct state_t {
   bwtinterval_t interval;
-  unsigned char trace;
+  unsigned char trace: BACKTRACE_SIZE;
+  unsigned char nucleotide: NUCLEOTIDES_BITS;
   struct state_t *previousState;
 };
 
-void setState (state_t *state, bwtinterval_t *interval, unsigned char trace, state_t *previousState) {
+void setState (state_t *state, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, state_t *previousState) {
   state->interval      = *interval;
   state->trace         = trace;
+  state->nucleotide    = nucleotide;
   state->previousState = previousState;
 }
 
@@ -32,7 +34,7 @@ bwtinterval_t *getStateInterval (state_t *state) {
 }
 
 bool hasTrace (state_t *state, unsigned char traceType) {
-  return ((state->trace & BACKTRACE_MASK) == traceType);
+  return (state->trace == traceType);
 }
 
 void printState (state_t *state, size_t maxDepth) {
@@ -74,7 +76,7 @@ void printState (state_t *state, size_t maxDepth) {
     tmpSeq2[i] = tmpSeq1[s-i-1];
   }
   tmpSeq2[s] = 0;
-  printf("\t\t\t\t%" PRIu64 "-%" PRIu64 " (%p): %s (%c/%c -> %p)\n", getStateInterval(state)->k, getStateInterval(state)->l, state, tmpSeq2, CIGAR[(state->trace & BACKTRACE_MASK) >> BACKTRACE_OFFSET], "ACGT"[state->trace & NUCLEOTIDE_MASK], state->previousState);
+  printf("\t\t\t\t%" PRIu64 "-%" PRIu64 " (%p): %s (%c/%c -> %p)\n", getStateInterval(state)->k, getStateInterval(state)->l, state, tmpSeq2, CIGAR[state->trace], "ACGT"[state->nucleotide], state->previousState);
 }
 
 void computeBacktrace (state_t *state, outputSam_t *outputSam) {
@@ -82,7 +84,7 @@ void computeBacktrace (state_t *state, outputSam_t *outputSam) {
   outputSam->backtraceSize = 0;
   while (state->previousState != NULL) {
     //printState(state, 101); fflush(stdout);
-    char cigar = CIGAR[state->trace >> BACKTRACE_OFFSET];
+    char cigar = CIGAR[state->trace];
     if ((outputSam->backtraceSize == 0) || (outputSam->backtraceCigar[outputSam->backtraceSize-1] != cigar)) {
       outputSam->backtraceCigar[outputSam->backtraceSize] = cigar;
       outputSam->backtraceLengths[outputSam->backtraceSize] = 1;
