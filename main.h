@@ -64,6 +64,11 @@ void printRead (states_t *states, path_t *path, char *quality, count_t *counts, 
   //printf("Read: %s, read length: %zu\n", forwardSeq, readLength);
   //printStates(states, depth);
   for (size_t stateId = 0; stateId < nStates; ++stateId) {
+    if (nErrors != 0) {
+      //printf("depth: %zu\n", depth);
+      computeBacktrace(states, path->depth, nErrors, stateId, outputSam);
+      computeCigar(outputSam);
+    }
     printReadState(&theseStates[stateId], path->depth, nHits, nErrors, outputSam);
   }
 }
@@ -93,7 +98,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
         //printf("      cannot add state\n");
         return false;
       }
-      setState(nextState, &nextInterval, MATCH, 0, previousState);
+      setState(nextState, &nextInterval, MATCH, 0, stateId);
     }
   }
   //printf("    found map: %s\n", mapFound ? "true" : "false");
@@ -127,7 +132,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       if (nextState == NULL) {
         return false;
       }
-      setState(nextState, &previousState->interval, INSERTION, 0, previousState);
+      setState(nextState, &previousState->interval, INSERTION, 0, stateId);
     }
     // add mismatches
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
@@ -140,7 +145,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
             //printf("      third case\n");
             return false;
           }
-          setState(nextState, &nextInterval, MISMATCH, nt, previousState);
+          setState(nextState, &nextInterval, MISMATCH, nt, stateId);
         }
       }
     }
@@ -155,7 +160,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
           if (nextState == NULL) {
             return false;
           }
-          setState(nextState, &nextInterval, DELETION, nt, previousState);
+          setState(nextState, &nextInterval, DELETION, nt, stateId);
         }
       }
     }
@@ -262,7 +267,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
   int          bestStrand = 0;
   int          rid;
   char         cigar;
-  state_t *previousState;
+  //state_t *previousState;
   state_t *nextState;
   uint64_t cellId = path->cellIds[path->nCells];
   cell_t *cell = &tree->cells[cellId];
@@ -310,7 +315,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
     return false;
   }
   assert(alignmentSize > 0);
-  previousState = getState(states, previousDepth, baseNErrors, bestStateId);
+  //previousState = getState(states, previousDepth, baseNErrors, bestStateId);
   //printf("\tSize of alignment: %u, starting from %p: %u, %u/%u, %u\n", alignmentSize, previousState, previousDepth, baseNErrors, bestNErrors, bestStateId);
   currentNErrors = baseNErrors;
   genomeAlignmentSize = 0;
@@ -320,7 +325,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
     outputSam->backtraceCigar[0]   = 'M';
   }
   else {
-    computeBacktrace(previousState, outputSam);
+    computeBacktrace(states, previousDepth, baseNErrors, bestStateId, outputSam);
   }
   for (unsigned int i = 0; i < alignmentSize; ++i) {
     nextState = addState(states, path->depth, currentNErrors);
@@ -328,7 +333,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
       return false;
     }
     //printf("\tbest state: %c/%c\n", CIGAR[bestStates[i].trace], "ACGT"[bestStates[i].nucleotide]);
-    setState(nextState, &bestStates[i].interval, bestStates[i].trace, bestStates[i].nucleotide, previousState);
+    setState(nextState, &bestStates[i].interval, bestStates[i].trace, bestStates[i].nucleotide, bestStateId);
     //printState(nextState, 101); fflush(stdout);
     if (! hasTrace(nextState, DELETION)) {
       //printf("\t\tAdding nucleotide %c\n", "ACGT"[bestStates[i].trace & NUCLEOTIDE_MASK]);
@@ -342,7 +347,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
     }
     //printf("\tAdding state @ %lu/%u/%lu: ", path->depth, currentNErrors, states->nStates[path->depth][currentNErrors]-1);
     //printState(&states->states[path->depth][currentNErrors][states->nStates[path->depth][currentNErrors]-1], 100);
-    previousState = nextState;
+    //previousState = nextState;
     assert(currentNErrors <= bestNErrors);
     cigar = CIGAR[nextState->trace];
     if (bestNErrors != 0) {

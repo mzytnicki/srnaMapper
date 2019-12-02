@@ -172,7 +172,7 @@ bool tryNoDiffSW (sw_t *sw, unsigned int genomeSequenceId) {
     genomeNucleotide = sw->genomeSequences[genomeSequenceId][i];
     sw->states[i].trace         = MATCH;
     sw->states[i].nucleotide    = genomeNucleotide;
-    sw->states[i].previousState = NULL;
+    sw->states[i].previousState = 0;
     //printf("\t\t\tState @ %u\n", i);
     //printState(&sw->states[i], 100);
     //printf("\n");
@@ -358,12 +358,12 @@ unsigned int getScore (sw_t *sw, unsigned int genomeSequenceId, unsigned int max
       sw->states[backtraceId].interval.k = bwt->L2[genomeNucleotide] + sw->states[backtraceId].interval.k + 1;
       sw->states[backtraceId].interval.l = bwt->L2[genomeNucleotide] + sw->states[backtraceId].interval.l;
       */
-      sw->states[backtraceId].previousState = NULL;
+      sw->states[backtraceId].previousState = 0;
       reconstructedGenomeSequence >>= NUCLEOTIDES_BITS;
     }
     else {
       sw->states[backtraceId].interval = previousInterval;
-      sw->states[backtraceId].previousState = NULL;
+      sw->states[backtraceId].previousState = 0;
     }
     //printf("\t\t\tState @ %u\n", backtraceId);
     //printState(&sw->states[backtraceId], 100);

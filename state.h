@@ -17,12 +17,12 @@ typedef struct state_t state_t;
 
 struct state_t {
   bwtinterval_t interval;
-  unsigned char trace: BACKTRACE_SIZE;
+  unsigned char trace:      BACKTRACE_SIZE;
   unsigned char nucleotide: NUCLEOTIDES_BITS;
-  struct state_t *previousState;
+  unsigned int previousState;
 };
 
-void setState (state_t *state, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, state_t *previousState) {
+void setState (state_t *state, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
   state->interval      = *interval;
   state->trace         = trace;
   state->nucleotide    = nucleotide;
@@ -76,7 +76,7 @@ void printState (state_t *state, size_t maxDepth) {
     tmpSeq2[i] = tmpSeq1[s-i-1];
   }
   tmpSeq2[s] = 0;
-  printf("\t\t\t\t%" PRIu64 "-%" PRIu64 " (%p): %s (%c/%c -> %p)\n", getStateInterval(state)->k, getStateInterval(state)->l, state, tmpSeq2, CIGAR[state->trace], "ACGT"[state->nucleotide], state->previousState);
+  printf("\t\t\t\t%" PRIu64 "-%" PRIu64 " (%p): %s (%c/%c -> %u)\n", getStateInterval(state)->k, getStateInterval(state)->l, state, tmpSeq2, CIGAR[state->trace], "ACGT"[state->nucleotide], state->previousState);
 }
 
 bool areStatesEqual (state_t *state1, state_t *state2) {
@@ -110,6 +110,7 @@ void swapStates(state_t *s1, state_t *s2) {
   *s2 = tmp; 
 } 
 
+/*
 void computeBacktrace (state_t *state, outputSam_t *outputSam) {
   assert(state != NULL);
   outputSam->backtraceSize = 0;
@@ -127,6 +128,7 @@ void computeBacktrace (state_t *state, outputSam_t *outputSam) {
     state = state->previousState;
   }
 }
+*/
 
 /**
  * Print all the reads in a given state
@@ -135,11 +137,6 @@ void printReadState (state_t *state, size_t depth, bwtint_t nHits, unsigned int 
   unsigned int hitId = 0;
   int64_t pos;
   int strand, rid;
-  if (nErrors != 0) {
-    //printf("depth: %zu\n", depth);
-    computeBacktrace(state, outputSam);
-    computeCigar(outputSam);
-  }
   for (bwtint_t bwtint = getStateInterval(state)->k; bwtint <= getStateInterval(state)->l; ++bwtint) {
     ++hitId;
     pos = bwa_sa2pos(bns, bwt, bwtint, depth, &strand);

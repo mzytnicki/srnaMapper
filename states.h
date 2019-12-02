@@ -23,6 +23,7 @@ typedef struct {
   state_t     **states;
   size_t      **firstState;
   size_t      **nStates;
+  size_t       *allocatedNStates;
   size_t       *nStatesPerError;
   size_t       *nStatesPerPosition;
   size_t       *minErrors;
@@ -154,10 +155,9 @@ state_t *addState (states_t *states, size_t depth, size_t nErrors) {
     return NULL;
   }
   */
-  if (states->nStatesPerError[nErrors] == N_STATES-1) {
-    printf("Exiting because # states = %zu >= %i at depth %zu with %zu errors, before simplification.\n", states->nStatesPerError[nErrors], N_STATES, depth, nErrors);
-    printStates(states, depth);
-    states->nStatesPerError[nErrors] = N_STATES;
+  if (states->nStatesPerError[nErrors] == states->allocatedNStates[nErrors]-1) {
+    states->allocatedNStates[nErrors] *= 2;
+    states->states[nErrors] = realloc(states->states[nErrors], states->allocatedNStates[nErrors] * sizeof(state_t));
     return NULL;
   }
   //states->states[depth][nErrors][states->nStates[depth][nErrors]] = *state;
@@ -190,6 +190,7 @@ states_t *initializeStates(size_t treeSize) {
   states->states             = (state_t **)     malloc((parameters->maxNErrors+1) * sizeof(states_t *));
   states->firstState         = (size_t **)      malloc(states->depth * sizeof(size_t *));
   states->nStates            = (size_t **)      malloc(states->depth * sizeof(size_t *));
+  states->allocatedNStates   = (size_t *)       malloc((parameters->maxNErrors+1) * sizeof(size_t));
   states->nStatesPerError    = (size_t *)       calloc(parameters->maxNErrors+1,  sizeof(size_t));
   states->nStatesPerPosition = (size_t *)       calloc(states->depth,  sizeof(size_t));
   states->minErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
@@ -203,13 +204,14 @@ states_t *initializeStates(size_t treeSize) {
     states->maxErrors[depth] = SIZE_MAX;
   }
   for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
-    states->states[nErrors] = (state_t *) malloc(N_STATES * sizeof(states_t));
+    states->allocatedNStates[nErrors] = N_STATES;
+    states->states[nErrors] = (state_t *) malloc(states->allocatedNStates[nErrors] * sizeof(states_t));
   }
   state_t *baseState = addState(states, 0, 0);
   baseState->interval.k    = 0;
   baseState->interval.l    = bwt->seq_len;
   baseState->trace         = 0;
-  baseState->previousState = NULL;
+  baseState->previousState = 0;
   createSW(states->sw, states->depth);
   createBwtBuffer(states->bwtBuffer);
   return states;
@@ -237,6 +239,45 @@ void backtrackStates(states_t *states, size_t level) {
     for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
       states->nStatesPerError[j] = states->firstState[level-1][j] + states->nStates[level-1][j];
     }
+  }
+}
+
+void computeBacktrace (states_t *states, int depth, int nErrors, size_t stateId, outputSam_t *outputSam) {
+  state_t *state;
+  char cigar;
+  outputSam->backtraceSize = 0;
+  while ((depth >= 0) && (nErrors > 0)) {
+    state = getState(states, depth, nErrors, stateId);
+    //printState(state, 101); fflush(stdout);
+    cigar = CIGAR[state->trace];
+    if ((outputSam->backtraceSize == 0) || (outputSam->backtraceCigar[outputSam->backtraceSize-1] != cigar)) {
+      outputSam->backtraceCigar[outputSam->backtraceSize] = cigar;
+      outputSam->backtraceLengths[outputSam->backtraceSize] = 1;
+      ++outputSam->backtraceSize;
+    }
+    else {
+      ++outputSam->backtraceLengths[outputSam->backtraceSize-1];
+    }
+    if (hasTrace(state, MATCH)) {
+      --depth;
+    }
+    else if (hasTrace(state, MISMATCH)) {
+      --depth;
+      assert(nErrors > 0);
+      --nErrors;
+    }
+    else if (hasTrace(state, INSERTION)) {
+      --depth;
+      assert(nErrors > 0);
+      --nErrors;
+    }
+    else if (hasTrace(state, DELETION)) {
+      --nErrors;
+    }
+    else {
+      assert(false);
+    }
+    stateId = state->previousState;
   }
 }
 
