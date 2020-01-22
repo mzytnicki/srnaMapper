@@ -77,6 +77,7 @@ void createSW (sw_t *sw, size_t depth) {
 }
 
 void unsetReadSequence (sw_t *sw) {
+  //printf("\t\t\tUnsetting read sequence\n");
   sw->readLength = 0;
 }
 
@@ -84,7 +85,7 @@ void addReadSequence (sw_t *sw, sequence_t sequence, unsigned int length) {
   //TODO double-check the direction
   //printf("\t\t\tSetting read sequence (%d): ", length);
   //printSequence(sequence, length);
-  //printf("\n");
+  //printf(", read length: %d\n", sw->readLength);
   for (unsigned int i = 0; i < length; ++i) {
     sw->readSequence[sw->readLength] = sequence & NUCLEOTIDE_MASK;
     sequence >>= NUCLEOTIDES_BITS;

@@ -14,18 +14,18 @@
 typedef struct {
   char       **qualities;
   //uint64_t    *cellIds;
-  //unsigned int nQualities;
-  unsigned int nAllocated;
+  uint32_t nQualities;
+  uint32_t nAllocated;
 } quality_t;
 
 void createQualities (quality_t *qualities) {
   qualities->nAllocated = INIT_N_QUALITIES;
   qualities->qualities  = (char **) calloc(qualities->nAllocated, sizeof(char *));
-  //qualities->nQualities = 0;
+  qualities->nQualities = 0;
 }
 
 void freeQualities (quality_t *qualities) {
-  for (unsigned int i = 0; i < qualities->nAllocated; ++i) {
+  for (uint32_t i = 0; i < qualities->nAllocated; ++i) {
     if (qualities->qualities[i] != NULL) {
       free(qualities->qualities[i]);
     }
@@ -33,13 +33,13 @@ void freeQualities (quality_t *qualities) {
   free(qualities->qualities);
 }
 
-unsigned int findQualityId (const quality_t *qualities, uint64_t cellId) {
+uint32_t findQualityId (const quality_t *qualities, uint64_t cellId) {
   if ((cellId >= qualities->nAllocated) || (qualities->qualities[cellId] == NULL)) return NO_QUALITY;
   return cellId;
 }
 
 char *findQuality (const quality_t *qualities, uint64_t cellId) {
-  unsigned int qualityId = findQualityId(qualities, cellId);
+  uint32_t qualityId = findQualityId(qualities, cellId);
   if (qualityId == NO_QUALITY) return NULL;
   //printf("\t\t\tFinding quality for %" PRIu64 ": %u\n", cellId, qualityId);
   return qualities->qualities[qualityId]; 
@@ -49,6 +49,7 @@ void addQuality (quality_t *qualities, uint64_t cellId, size_t l, char *quality)
   //printf("Adding quality %s at %" PRIu64 ".\n", quality, cellId);
   //TODO: Is the "if" useful?
   size_t previousNAllocated;
+  ++qualities->nQualities;
   if (cellId >= qualities->nAllocated) {
     previousNAllocated = qualities->nAllocated;
     while (cellId >= qualities->nAllocated) {
@@ -65,7 +66,7 @@ void addQuality (quality_t *qualities, uint64_t cellId, size_t l, char *quality)
   qualities->qualities[cellId] = strndup(quality, l);
 }
 
-void replaceQuality (quality_t *qualities, unsigned int qualityId, size_t l, char *quality) {
+void replaceQuality (quality_t *qualities, uint32_t qualityId, size_t l, char *quality) {
   //printf("Quality: %zu vs %zu\n", strlen(qualities->qualities[qualityId]), strlen(quality));
   assert(strlen(qualities->qualities[qualityId]) == strlen(quality));
   assert(strlen(quality) == l);
@@ -75,7 +76,7 @@ void replaceQuality (quality_t *qualities, unsigned int qualityId, size_t l, cha
 }
 
 void _setQuality (quality_t *qualities, uint64_t cellId, size_t l, char *quality) {
-  unsigned qualityId = findQualityId(qualities, cellId);
+  uint32_t qualityId = findQualityId(qualities, cellId);
   if (qualityId == NO_QUALITY) {
     addQuality(qualities, cellId, l, quality);
   }

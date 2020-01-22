@@ -66,6 +66,7 @@ int main(int argc, char const ** argv) {
   parameters_t param;
   stats_t stat;
   tree_t tree;
+  tree2_t tree2;
   outputSam_t outputSam;
   bwaidx_t *idx = NULL;
   nReads = 0;
@@ -93,6 +94,10 @@ int main(int argc, char const ** argv) {
     puts("... done.");
   }
   puts("Loading genome...");
+  puts("Simplifying tree...");
+  copyTree(&tree2, &tree);
+  freeTree(&tree);
+  puts("... done");
   idx = loadGenomeFile(parameters->genomeFileName);
   if (idx == NULL) return EXIT_FAILURE;
   puts("... done.");
@@ -105,9 +110,9 @@ int main(int argc, char const ** argv) {
     printf("Error!  Cannot write to output SAM file '%s'.\nExiting.\n", param.outputSamFileName);
   }
   outputSam.file = outputSamFile;
-  createOutputSam(&outputSam, tree.depth);
-  map(&tree, &outputSam);
-  freeTree(&tree);
+  createOutputSam(&outputSam, tree2.depth);
+  map(&tree2, &outputSam);
+  freeTree2(&tree2);
   freeOutputSam(&outputSam);
   bwa_idx_destroy(idx);
   puts("... done.");

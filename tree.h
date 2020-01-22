@@ -18,15 +18,17 @@ typedef struct {
   size_t    depth;
   cell_t   *cells;
   uint64_t  nCells;
+  uint64_t  nEdges;
   uint64_t  nAllocated;
   quality_t qualities;
 } tree_t;
 
 void createTree (tree_t *tree) {
   tree->nAllocated = INIT_N_CELLS;
-  tree->cells = (cell_t *) malloc(tree->nAllocated * sizeof(cell_t));
-  tree->depth = TREE_BASE_SIZE;
-  tree->nCells = N_TREE_BASE;
+  tree->cells      = (cell_t *) malloc(tree->nAllocated * sizeof(cell_t));
+  tree->depth      = TREE_BASE_SIZE;
+  tree->nCells     = N_TREE_BASE;
+  tree->nEdges     = 0;
   for (size_t i = 0; i < N_TREE_BASE; ++i) {
     createCell(&tree->cells[i]);
   }
@@ -188,7 +190,11 @@ uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *sequence, int sequ
   for (; sequenceId >= 0; --sequenceId) {
     nucleotide = CHAR_TO_DNA5[(int) sequence[sequenceId]];
     if (edge == NULL) {
+      ++tree->nEdges;
       edge = &tree->cells[cellId].edges[nucleotide];
+    }
+    else if (edge->length == 0) {
+      ++tree->nEdges;
     }
     //printf("  seq id: %d, edge: %p (%i), nucleotide: %c\n", sequenceId, edge, edge->length, DNA5_TO_CHAR[nucleotide]);
     addEdgeNucleotide(edge, nucleotide);
@@ -218,7 +224,6 @@ uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *sequence, int sequ
   return newCellId;
   */
 }
-
 
 uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int sequenceId) {
   size_t edgeLength = 0;
@@ -265,6 +270,7 @@ uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int s
   // set node
   //printf("  over with %zu\n", edgeLength); fflush(stdout);
   if (edgeLength != 0) {
+    ++tree->nEdges;
     cellId = splitEdgeTree(tree, edge, edgeLength, N_NUCLEOTIDES);
   }
   return cellId;

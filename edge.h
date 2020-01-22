@@ -15,13 +15,13 @@ typedef uint32_t sequence_t;
 typedef struct {
   sequence_t sequence: EDGE_SEQ_LENGTH;
   sequence_t length:   EDGE_LENGTH_LENGTH;
-  uint64_t cellId;
+  uint32_t cellId;
 } edge_t;
 
 void createEdge (edge_t *edge) {
   edge->length   = 0;
   edge->sequence = 0;
-  edge->cellId = NO_DATA;
+  edge->cellId   = NO_DATA;
 }
 
 bool isSetEdge (edge_t *edge) {
@@ -85,7 +85,7 @@ void printEdge (edge_t *edge) {
   }
   printf("-");
   printSequence(edge->sequence, edge->length);
-  printf("-> %" PRIu64, edge->cellId);
+  printf("-> %" PRIu32, edge->cellId);
 }
 
 #endif

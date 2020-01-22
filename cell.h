@@ -73,6 +73,7 @@ unsigned short getNChildren (cell_t *cell) {
   return nChildren;
 }
 
+/*
 bool isTerminal (cell_t *cell) {
   for (unsigned int edgeId = 0; edgeId < N_NUCLEOTIDES; ++edgeId) {
     if (isSetEdge(&cell->edges[edgeId])) {
@@ -81,6 +82,7 @@ bool isTerminal (cell_t *cell) {
   }
   return true;
 }
+*/
 
 void printCell (cell_t *cell) {
   for (unsigned short i = 0; i < N_NUCLEOTIDES; ++i) {
