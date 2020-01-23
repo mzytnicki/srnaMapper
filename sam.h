@@ -60,6 +60,8 @@ void computeReverseComplement (outputSam_t *outputSam) {
 
 void freeOutputSam (outputSam_t *outputSam) {
   free(outputSam->qname);
+  free(outputSam->backtraceCigar);
+  free(outputSam->backtraceLengths);
   free(outputSam->forwardCigar);
   free(outputSam->backwardCigar);
   free(outputSam->forwardSeq);

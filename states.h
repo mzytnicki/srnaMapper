@@ -68,6 +68,12 @@ void printStates (states_t *states, size_t depth) {
       printf("\n");
     }
   }
+  for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
+    printf("\t\t\t\t%zu errors:\n", nErrors);
+    for (size_t i = 0; i <= depth; ++i) {
+      printf("\t\t\t\t\tdepth %zu: %zu/%zu cells (starting @ %zu)\n", i, states->firstState[i+1][nErrors] - states->firstState[i][nErrors], states->nStates[i][nErrors], states->firstState[i][nErrors]);
+    }
+  }
 }
 
 unsigned int getParentStateId (unsigned int stateId) {
@@ -83,7 +89,7 @@ unsigned int getGreaterStateId (unsigned int stateId) {
 }
 
 void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
-  //return nStates;
+  return;
   assert(depth < states->depth);
   assert(nErrors <= states->maxErrors[depth]);
   size_t previousNStates = states->nStates[depth][nErrors];
@@ -157,12 +163,15 @@ state_t *addState (states_t *states, size_t depth, size_t nErrors) {
   */
   if (states->nStatesPerError[nErrors] == states->allocatedNStates[nErrors]-1) {
     states->allocatedNStates[nErrors] *= 2;
-    states->states[nErrors] = realloc(states->states[nErrors], states->allocatedNStates[nErrors] * sizeof(state_t));
-    return NULL;
+    states->states[nErrors] = (state_t *) realloc(states->states[nErrors], states->allocatedNStates[nErrors] * sizeof(state_t));
+    printf("Reallocation #states with %zu errors: now %zu\n", nErrors, states->allocatedNStates[nErrors]);
+    printStates(states, depth);
+    //return NULL;
   }
   //states->states[depth][nErrors][states->nStates[depth][nErrors]] = *state;
   if (states->nStates[depth][nErrors] == 0) {
-    states->firstState[depth][nErrors] = states->nStatesPerError[nErrors];
+    states->firstState[depth][nErrors] = (depth == 0)? 0: states->firstState[depth-1][nErrors] + states->nStates[depth-1][nErrors];
+    //states->firstState[depth][nErrors] = states->nStatesPerError[nErrors];
   }
   ++states->nStates[depth][nErrors];
   ++states->nStatesPerPosition[depth];
@@ -207,7 +216,7 @@ states_t *initializeStates(size_t treeSize) {
     states->allocatedNStates[nErrors] = N_STATES;
     states->states[nErrors] = (state_t *) malloc(states->allocatedNStates[nErrors] * sizeof(states_t));
   }
-  state_t *baseState = addState(states, 0, 0);
+  state_t *baseState       = addState(states, 0, 0);
   baseState->interval.k    = 0;
   baseState->interval.l    = bwt->seq_len;
   baseState->trace         = 0;
@@ -219,6 +228,7 @@ states_t *initializeStates(size_t treeSize) {
 
 void backtrackStates(states_t *states, size_t level) {
   //printf("\t\t\tBacktracking to level %zu\n", level);
+  //printStates(states, level);
   for (size_t i = level; i <= states->depth; ++i) {
     if (states->nStatesPerPosition[i] == 0) {
       return;
@@ -228,6 +238,7 @@ void backtrackStates(states_t *states, size_t level) {
     states->maxErrors[i]          = SIZE_MAX;
     for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
       states->nStates[i][j] = 0;
+      states->firstState[i][j] = ((i == 0)? 0: states->firstState[i-1][j]);
     }
   }
   if (level == 0) {
@@ -240,6 +251,8 @@ void backtrackStates(states_t *states, size_t level) {
       states->nStatesPerError[j] = states->firstState[level-1][j] + states->nStates[level-1][j];
     }
   }
+  //printf("\t\t\tFinally\n");
+  //printStates(states, level);
 }
 
 void computeBacktrace (states_t *states, int depth, int nErrors, size_t stateId, outputSam_t *outputSam) {
@@ -285,13 +298,21 @@ void freeStates(states_t *states) {
   for (size_t i = 0; i <= parameters->maxNErrors; ++i) {
     free(states->states[i]);
   }
+  for (size_t depth = 0; depth < states->depth; ++depth) {
+    free(states->firstState[depth]);
+    free(states->nStates[depth]);
+  }
   free(states->states);
   free(states->nStates);
+  free(states->allocatedNStates);
   free(states->firstState);
   free(states->nStatesPerPosition);
   free(states->nStatesPerError);
   free(states->minErrors);
   free(states->maxErrors);
+  free(states->bwtBuffer);
+  freeSW(states->sw);
+  free(states->sw);
   free(states);
 }
 

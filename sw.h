@@ -4,6 +4,7 @@
 #include "constants.h"
 #include "helper.h"
 #include "state.h"
+#include "edge.h"
 
 
 /******* Smith-Waterman cell type *******/
@@ -47,11 +48,12 @@ typedef struct {
   unsigned int     alignmentSize;
   sw_cell_t      **matrix;
   state_t         *states;
+  size_t           nCols;
 } sw_t;
 
 void createSW (sw_t *sw, size_t depth) {
-  size_t nCols = depth + 1;
   size_t nRows = 2 * parameters->maxNErrors + 1;
+  sw->nCols           = depth + 1;
   sw->genomeSequences = (unsigned short **) malloc(MAX_SW_N_SEQUENCES * sizeof(unsigned short *));
   sw->genomeLengths   = (unsigned int *)    calloc(MAX_SW_N_SEQUENCES,  sizeof(unsigned int));
   sw->poss            = (uint64_t *)        malloc(MAX_SW_N_SEQUENCES * sizeof(uint64_t));
@@ -60,8 +62,8 @@ void createSW (sw_t *sw, size_t depth) {
   for (unsigned int i = 0; i < MAX_SW_N_SEQUENCES; ++i) {
     sw->genomeSequences[i] = (unsigned short *) malloc(depth * sizeof(unsigned short));
   }
-  sw->matrix = (sw_cell_t **) malloc(nCols * sizeof(unsigned int *));
-  for (size_t i = 0; i < nCols; ++i) {
+  sw->matrix = (sw_cell_t **) malloc(sw->nCols * sizeof(unsigned int *));
+  for (size_t i = 0; i < sw->nCols; ++i) {
     sw->matrix[i] = (sw_cell_t *) malloc(nRows * sizeof(unsigned int));
   }
   sw->matrix[0][parameters->maxNErrors].value = 0;
@@ -73,7 +75,23 @@ void createSW (sw_t *sw, size_t depth) {
     sw->matrix[i][parameters->maxNErrors-i].value = i;
     sw->matrix[i][parameters->maxNErrors-i].backTrace = SW_INSERTION;
   }
-  sw->states = (state_t *) malloc(nCols * sizeof(state_t));
+  sw->states = (state_t *) malloc(sw->nCols * sizeof(state_t));
+}
+
+void freeSW (sw_t *sw) {
+  for (unsigned int i = 0; i < MAX_SW_N_SEQUENCES; ++i) {
+    free(sw->genomeSequences[i]);
+  }
+  for (size_t i = 0; i < sw->nCols; ++i) {
+    free(sw->matrix[i]);
+  }
+  free(sw->genomeSequences);
+  free(sw->genomeLengths);
+  free(sw->poss);
+  free(sw->strands);
+  free(sw->readSequence);
+  free(sw->matrix);
+  free(sw->states);
 }
 
 void unsetReadSequence (sw_t *sw) {

@@ -44,13 +44,13 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
   //printf("Quality: %s (%p)\n", quality, quality);
   //printf("Read:    %s\n", forwardSeq);
   assert(strlen(quality) == depth);
-  //printf("Printing read\n");
-  //printPath(path); fflush(stdout);
-  //printStates(states, path->depth+1); fflush(stdout);
+  printf("Printing read\n");
+  printPath(path); fflush(stdout);
+  printStates(states, path->depth+1); fflush(stdout);
   writeQname(outputSam, counts);
   outputSam->isBackwardSet = false;
-  //printf("depth: %zu/%zu, # states: %zu, nErrors: %u, Seq: %s, qual: %s\n", depth, path->maxDepth, nStates, nErrors, seq, qual); fflush(stdout);
-  //printState(&theseStates[nStates-1], path->depth); fflush(stdout);
+  printf("depth: %zu/%zu, # states: %zu, nErrors: %u, Seq: %s, qual: %s\n", depth, path->maxDepth, nStates, nErrors, seq, qual); fflush(stdout);
+  printState(&theseStates[nStates-1], path->depth); fflush(stdout);
   memcpy(outputSam->forwardSeq,  seq,  (depth+1) * sizeof(char));
   memcpy(outputSam->forwardQual, qual, (depth+1) * sizeof(char));
   for (size_t i = 0; i < nStates; ++i) {
@@ -412,7 +412,6 @@ bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, outputSam_t *
   //cell2_t *cell = &tree->cells[cellId];
   cellInfo_t *cellInfo;
   //edge_t *edge = getFirstEdge2(tree, cell);
-  assert(edge != NULL);
   unsetReadSequence(states->sw);
   /*
   do {

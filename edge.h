@@ -1,6 +1,9 @@
 #ifndef EDGE_H
 #define EDGE_H
 
+#include "constants.h"
+#include "helper.h"
+
 /******* Edge type *******/
 /**
  * An edge is the link from one cell to one of its children.

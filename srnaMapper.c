@@ -93,11 +93,11 @@ int main(int argc, char const ** argv) {
     if (returnCode != EXIT_SUCCESS) return returnCode;
     puts("... done.");
   }
-  puts("Loading genome...");
   puts("Simplifying tree...");
   copyTree(&tree2, &tree);
   freeTree(&tree);
   puts("... done");
+  puts("Loading genome...");
   idx = loadGenomeFile(parameters->genomeFileName);
   if (idx == NULL) return EXIT_FAILURE;
   puts("... done.");
@@ -112,8 +112,10 @@ int main(int argc, char const ** argv) {
   outputSam.file = outputSamFile;
   createOutputSam(&outputSam, tree2.depth);
   map(&tree2, &outputSam);
+  fclose(outputSamFile);
   freeTree2(&tree2);
   freeOutputSam(&outputSam);
+  freeParameters(parameters);
   bwa_idx_destroy(idx);
   puts("... done.");
   printStats();

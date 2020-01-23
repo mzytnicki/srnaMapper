@@ -1,6 +1,10 @@
 #ifndef CELL_H
 #define CELL_H
 
+#include "constants.h"
+#include "parameters.h"
+#include "edge.h"
+
 /******* Cell type *******/
 /**
  * A cell is a prefix of the reads tree.

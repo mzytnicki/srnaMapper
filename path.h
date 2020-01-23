@@ -76,6 +76,8 @@ void freePath (path_t *path) {
   free(path->nucleotides);
   free(path->children);
   free(path->cellIds);
+  free(path->edges);
+  free(path->read);
   free(path->shortCut);
   free(path);
 }

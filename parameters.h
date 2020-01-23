@@ -86,4 +86,13 @@ int parseCommandLine (int argc, char const **argv) {
   return EXIT_SUCCESS;
 }
 
+void freeParameters(parameters_t *p) {
+  for (unsigned int readsFileId = 0; readsFileId < p->nReadsFiles; ++readsFileId) {
+    free(p->readsFileNames[readsFileId]);
+  }
+  free(p->genomeFileName);
+  free(p->outputReadsFileName);
+  free(p->outputSamFileName);
+}
+
 #endif

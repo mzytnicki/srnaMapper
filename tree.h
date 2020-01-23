@@ -1,6 +1,14 @@
 #ifndef TREE_H
 #define TREE_H
 
+#include "constants.h"
+#include "parameters.h"
+#include "helper.h"
+#include "stats.h"
+#include "edge.h"
+#include "cell.h"
+#include "quality.h"
+
 /******* Tree type *******/
 /**
  * A tree is stores all the prefixes of the reads.
@@ -118,14 +126,14 @@ void computeTreeStats (const tree_t *tree) {
 }
 
 void freeTree (tree_t *tree) {
-  tree->nAllocated = 0;
-  tree->depth = 0;
-  tree->nCells = 0;
   for (uint64_t i = 0; i < tree->nCells; ++i) {
     freeCell(&tree->cells[i]);
   }
   free(tree->cells);
   freeQualities(&tree->qualities);
+  tree->nAllocated = 0;
+  tree->depth = 0;
+  tree->nCells = 0;
 }
 
 void setQuality (tree_t *tree, size_t cellId, size_t l, char *quality, unsigned int fileId) {
@@ -263,6 +271,7 @@ uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int s
       else {
         cellId = splitEdgeTree(tree, edge, edgeLength, edgeNucleotide);
         edge   = &tree->cells[cellId].edges[sequenceNucleotide];
+        ++tree->nEdges;
         return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
       }
     }

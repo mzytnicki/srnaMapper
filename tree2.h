@@ -7,7 +7,12 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "constants.h"
+#include "parameters.h"
 #include "quality.h"
+#include "edge.h"
+#include "cell.h"
+#include "tree.h"
 
 #define NO_INFO ((uint32_t) -1)
 
@@ -66,7 +71,7 @@ void createCellInfos (cellInfos_t *cellInfos, size_t nInfos, size_t readSize, si
 }
 
 void freeCellInfos (cellInfos_t *cellInfos) {
-  for (unsigned int i = 0; i < cellInfos->nCellInfos; ++i) {
+  for (unsigned int i = 0; i < cellInfos->nAllocatedCellInfos; ++i) {
     freeCellInfo(&cellInfos->cellInfos[i]);
   }
   free(cellInfos->cellInfos);
@@ -145,7 +150,7 @@ edge_t *getFirstEdge2 (const tree2_t *tree, const cell2_t *cell) {
 }
 
 uint32_t addCell2 (tree2_t *tree, uint32_t edgeId, unsigned char nEdges) {
-  //printf("  Adding cell #%" PRIu32 "\n", tree->nCells);
+  //printf("  Adding cell #%" PRIu32 "/%" PRIu32 " after edge %" PRIu32 "/%" PRIu32 " (NO_INFO = %" PRIu32 ")\n", tree->nCells, tree->nAllocatedCells, edgeId, tree->nEdges, NO_INFO); fflush(stdout);
   assert(tree->nCells < tree->nAllocatedCells);
   if (edgeId != NO_INFO) {
     assert(edgeId < tree->nEdges);
@@ -154,7 +159,9 @@ uint32_t addCell2 (tree2_t *tree, uint32_t edgeId, unsigned char nEdges) {
   tree->cells[tree->nCells].firstEdge = tree->nEdges;
   tree->cells[tree->nCells].nEdges    = nEdges;
   ++tree->nCells;
+  assert(tree->nCells <= tree->nAllocatedCells);
   tree->nEdges += nEdges;
+  assert(tree->nEdges <= tree->nAllocatedEdges);
   return tree->nCells-1;
 }
 
@@ -165,6 +172,7 @@ uint32_t addEdge2 (tree2_t *tree, uint32_t cellId, unsigned char childId, uint32
   uint32_t edgeId = cell->firstEdge + childId;
   //printf("Adding edge2 with cell %" PRIu32 ", child %u, #cells %" PRIu32 "/%" PRIu32 ", #edges %" PRIu32 "/%" PRIu32 "\n", cellId, childId, tree->nCells, tree->nAllocatedCells, tree->nEdges, tree->nAllocatedEdges);
   //printCell2(cell); printf("\n"); fflush(stdout);
+  assert(edgeId < tree->nEdges);
   assert(edgeId < tree->nAllocatedEdges);
   edge_t *edge    = &tree->edges[edgeId];
   edge->sequence  = sequence;
