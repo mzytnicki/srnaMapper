@@ -52,6 +52,7 @@ typedef struct {
 } sw_t;
 
 void createSW (sw_t *sw, size_t depth) {
+  //printf("SW initialization depth is %zu\n", depth);
   size_t nRows = 2 * parameters->maxNErrors + 1;
   sw->nCols           = depth + 1;
   sw->genomeSequences = (unsigned short **) malloc(MAX_SW_N_SEQUENCES * sizeof(unsigned short *));
@@ -133,7 +134,9 @@ unsigned int setGenomeSequences (sw_t *sw, state_t *state) {
     sw->poss[sequenceId]          = pos;
     sw->strands[sequenceId]       = isRev;
     sw->genomeLengths[sequenceId] = 0;
-    for (unsigned int i = 0; i < MAX_SW_LENGTH; ++i) {
+    //for (unsigned int i = 0; i < MAX_SW_LENGTH; ++i) {
+    //printf("Max genome length: %zu\n", sw->readLength + parameters->maxNErrors);
+    for (unsigned int i = 0; i < sw->readLength + parameters->maxNErrors; ++i) {
       pos = (isRev)? pos+1: pos-1;
       uint64_t c = DNA5_TO_INT_REV[isRev][_get_pac(pac, pos)];
       sw->genomeSequences[sequenceId][i] = c;
@@ -148,7 +151,7 @@ unsigned int setGenomeSequences (sw_t *sw, state_t *state) {
     }
     //printf("\n"); fflush(stdout);
     //printf("\t\t\tTransformed into:        ");
-    //printSequence(sw->genomeSequences[sequenceId], sw->genomeLength);
+    //printSequenceLong(sw->genomeSequences[sequenceId], sw->genomeLengths[sequenceId]);
     //printf("\n"); fflush(stdout);
   }
   sw->genomeInterval = state->interval;
@@ -176,7 +179,7 @@ void setGenomeSequence (sw_t *sw, unsigned int genomeSequenceId) {
 
 bool tryNoDiffSW (sw_t *sw, unsigned int genomeSequenceId) {
   //printf("\t\t\tShrinking genome to:     ");
-  //printSequence(genomeSequence, sw->readLength);
+  //printSequenceLong(sw->genomeSequences[genomeSequenceId], sw->readLength);
   //printf("\n");
   unsigned short genomeNucleotide;
   if (sw->readLength != sw->genomeLengths[genomeSequenceId]) {

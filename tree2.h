@@ -84,7 +84,11 @@ void addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t
 }
 
 cellInfo_t *getCellInfo (cellInfos_t *cellInfos, uint32_t cellId) {
+  //printf("Looking for cell info %" PRIu32 "\n", cellId); fflush(stdout);
+  //printf("Current state is %p %" PRIu32 "\n", cellInfos->currentCellInfo, cellInfos->currentCellInfo->cellId); fflush(stdout);
+  //printf("Current state is %p\n", cellInfos->cellInfos + cellInfos->nCellInfos); fflush(stdout);
   for (; (! isEmptyCellInfo(cellInfos->currentCellInfo)) && (cellInfos->currentCellInfo->cellId < cellId); ++cellInfos->currentCellInfo) {
+    //printf("Got %" PRIu32 "\n", cellInfos->currentCellInfo->cellId); fflush(stdout);
   }
   return (cellInfos->currentCellInfo->cellId == cellId)? cellInfos->currentCellInfo: NULL;
 }
@@ -94,6 +98,10 @@ typedef struct {
   uint32_t      firstEdge;
   unsigned char nEdges;
 } cell2_t;
+
+unsigned char getNChildren2 (cell2_t *cell) {
+  return cell->nEdges;
+}
 
 bool isTerminal (cell2_t *cell) {
   return (cell->nEdges == 0);

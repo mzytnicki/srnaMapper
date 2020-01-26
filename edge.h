@@ -88,7 +88,7 @@ void printEdge (edge_t *edge) {
   }
   printf("-");
   printSequence(edge->sequence, edge->length);
-  printf("-> %" PRIu32, edge->cellId);
+  printf(" (%u)-> %" PRIu32, edge->length, edge->cellId);
 }
 
 #endif

@@ -45,7 +45,8 @@ void printPath (path_t *path) {
   printf("\n");
   for (size_t i = 0; i <= path->nCells; ++i) {
     printf("%" PRIu32 " ", path->cellIds[i]);
-    if ((i >= TREE_BASE_SIZE) && (i < path->nCells)) {
+    //if ((i >= TREE_BASE_SIZE) && (i < path->nCells)) {
+    if (i >= TREE_BASE_SIZE) {
       printf("child #%i ", path->children[i]);
       printEdge(&path->edges[i]);
     }

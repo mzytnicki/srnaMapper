@@ -24,7 +24,6 @@ typedef struct {
   size_t      **firstState;
   size_t      **nStates;
   size_t       *allocatedNStates;
-  size_t       *nStatesPerError;
   size_t       *nStatesPerPosition;
   size_t       *minErrors;
   size_t       *maxErrors;
@@ -39,6 +38,7 @@ size_t getNStates(const states_t *states, size_t depth, size_t nErrors) {
 
 state_t *getState(const states_t *states, size_t depth, size_t nErrors, size_t i) {
   assert(i < getNStates(states, depth, nErrors));
+  //printf("Getting state %zu\n", states->firstState[depth][nErrors]+i);
   return &states->states[nErrors][states->firstState[depth][nErrors]+i];
 }
 
@@ -154,29 +154,32 @@ bool isStateInserted (state_t *states, size_t nStates, state_t *state) {
 
 state_t *addState (states_t *states, size_t depth, size_t nErrors) {
   assert(depth <= states->depth);
-  //printf("\t\t\tAdding one state (%" PRIu64 ", %" PRIu64 ") at (depth = %zu, # errors = %zu), %zu/%d occupied\n", state->interval.k, state->interval.l, depth, nErrors, states->nStates[depth][nErrors], N_STATES); fflush(stdout);
+  //printf("Adding state @ depth %zu, %zu errors\n", depth, nErrors);
+  size_t nStatesPerError;
   //printState(state, states->depth);
   /*
   if (isStateInserted(states->states[depth][nErrors], states->nStates[depth][nErrors], state)) {
     return NULL;
   }
   */
-  if (states->nStatesPerError[nErrors] == states->allocatedNStates[nErrors]-1) {
-    states->allocatedNStates[nErrors] *= 2;
-    states->states[nErrors] = (state_t *) realloc(states->states[nErrors], states->allocatedNStates[nErrors] * sizeof(state_t));
-    printf("Reallocation #states with %zu errors: now %zu\n", nErrors, states->allocatedNStates[nErrors]);
-    printStates(states, depth);
-    //return NULL;
-  }
   //states->states[depth][nErrors][states->nStates[depth][nErrors]] = *state;
+  //printf("# states so far: %zu\n", states->nStates[depth][nErrors]);
   if (states->nStates[depth][nErrors] == 0) {
     states->firstState[depth][nErrors] = (depth == 0)? 0: states->firstState[depth-1][nErrors] + states->nStates[depth-1][nErrors];
     //states->firstState[depth][nErrors] = states->nStatesPerError[nErrors];
   }
+  //printf("first state: %zu\n", states->firstState[depth][nErrors]);
   ++states->nStates[depth][nErrors];
   ++states->nStatesPerPosition[depth];
-  ++states->nStatesPerError[nErrors];
-  stats->maxNStates = MAX(stats->maxNStates, states->nStatesPerError[nErrors]);
+  nStatesPerError = states->firstState[depth][nErrors] + states->nStates[depth][nErrors];
+  stats->maxNStates = MAX(stats->maxNStates, nStatesPerError);
+  if (nStatesPerError == states->allocatedNStates[nErrors]-1) {
+    states->allocatedNStates[nErrors] *= 2;
+    states->states[nErrors] = (state_t *) realloc(states->states[nErrors], states->allocatedNStates[nErrors] * sizeof(state_t));
+    //printf("Reallocation #states with %zu errors: now %zu\n", nErrors, states->allocatedNStates[nErrors]);
+    //printStates(states, depth);
+    //return NULL;
+  }
   //heapifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
   if (states->minErrors[depth] == SIZE_MAX) {
     states->minErrors[depth] = nErrors;
@@ -190,7 +193,9 @@ state_t *addState (states_t *states, size_t depth, size_t nErrors) {
       states->maxErrors[depth] = nErrors;
     }
   }
-  return &states->states[nErrors][states->nStatesPerError[nErrors]-1];
+  //printf("Add states finishes with index (count 1) %zu\n", nStatesPerError - 1);
+  return &states->states[nErrors][nStatesPerError - 1];
+  //return &states->states[nErrors][states->nStatesPerError[nErrors]-1];
 }
 
 states_t *initializeStates(size_t treeSize) {
@@ -200,7 +205,6 @@ states_t *initializeStates(size_t treeSize) {
   states->firstState         = (size_t **)      malloc(states->depth * sizeof(size_t *));
   states->nStates            = (size_t **)      malloc(states->depth * sizeof(size_t *));
   states->allocatedNStates   = (size_t *)       malloc((parameters->maxNErrors+1) * sizeof(size_t));
-  states->nStatesPerError    = (size_t *)       calloc(parameters->maxNErrors+1,  sizeof(size_t));
   states->nStatesPerPosition = (size_t *)       calloc(states->depth,  sizeof(size_t));
   states->minErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
   states->maxErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
@@ -239,16 +243,6 @@ void backtrackStates(states_t *states, size_t level) {
     for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
       states->nStates[i][j] = 0;
       states->firstState[i][j] = ((i == 0)? 0: states->firstState[i-1][j]);
-    }
-  }
-  if (level == 0) {
-    for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
-      states->nStatesPerError[j] = 0;
-    }
-  }
-  else {
-    for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
-      states->nStatesPerError[j] = states->firstState[level-1][j] + states->nStates[level-1][j];
     }
   }
   //printf("\t\t\tFinally\n");
@@ -307,7 +301,6 @@ void freeStates(states_t *states) {
   free(states->allocatedNStates);
   free(states->firstState);
   free(states->nStatesPerPosition);
-  free(states->nStatesPerError);
   free(states->minErrors);
   free(states->maxErrors);
   free(states->bwtBuffer);
