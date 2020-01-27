@@ -68,11 +68,13 @@ void printStates (states_t *states, size_t depth) {
       printf("\n");
     }
   }
-  for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
-    printf("\t\t\t\t%zu errors:\n", nErrors);
-    for (size_t i = 0; i <= depth; ++i) {
-      printf("\t\t\t\t\tdepth %zu: %zu/%zu cells (starting @ %zu)\n", i, states->firstState[i+1][nErrors] - states->firstState[i][nErrors], states->nStates[i][nErrors], states->firstState[i][nErrors]);
+  for (size_t i = 0; i <= depth; ++i) {
+    printf("\t\t\t\tdepth %zu:", i);
+    for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
+      printf("\t%zu errors: %zu (%zu) cells, starting @ %zu", nErrors, states->nStates[i][nErrors], states->firstState[i+1][nErrors] - states->firstState[i][nErrors], states->firstState[i][nErrors]);
+      //assert(states->firstState[i+1][nErrors] - states->firstState[i][nErrors] == states->nStates[i][nErrors]);
     }
+    printf("\n");
   }
 }
 
