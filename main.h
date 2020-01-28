@@ -116,7 +116,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
       setState(nextState, &nextInterval, MATCH, 0, stateId);
       //printf("Next state is %p\n", nextState);
       //printState(nextState, depth);
-      //printStates(states, depth); fflush(stdout);
+      //printStates(states, depth+1); fflush(stdout);
     }
   }
   //printf("    found map: %s\n", mapFound ? "true" : "false"); fflush(stdout);
@@ -241,7 +241,7 @@ void mapWithErrors (states_t *states, path_t *path) {
   }
   //printf("Mapping with errors\n");
   //printStates(states, path->depth-1);
-  //printPath(path);
+  //printPath(path); fflush(stdout);
   //TODO check this
   if (path->depth == TREE_BASE_SIZE) {
     for (size_t nErrors = states->minErrors[TREE_BASE_SIZE]; nErrors <= states->maxErrors[TREE_BASE_SIZE]; ++nErrors) {

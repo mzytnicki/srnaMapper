@@ -37,8 +37,10 @@ size_t getNStates(const states_t *states, size_t depth, size_t nErrors) {
 }
 
 state_t *getState(const states_t *states, size_t depth, size_t nErrors, size_t i) {
+  //printf("Getting state #%zu at depth %zu with %zu errors: %zu\n", i, depth, nErrors, states->firstState[depth][nErrors]+i);
+  //printf("\tfirst state: %zu, next first state: %zu\n", states->firstState[depth][nErrors], states->firstState[depth+1][nErrors]);
   assert(i < getNStates(states, depth, nErrors));
-  //printf("Getting state %zu\n", states->firstState[depth][nErrors]+i);
+  //assert((depth == states->depth) || (states->firstState[depth+1][nErrors] == 0) || (states->firstState[depth+1][nErrors] >= states->firstState[depth][nErrors]));
   return &states->states[nErrors][states->firstState[depth][nErrors]+i];
 }
 
@@ -158,7 +160,7 @@ state_t *addState (states_t *states, size_t depth, size_t nErrors) {
   assert(depth <= states->depth);
   //printf("Adding state @ depth %zu, %zu errors\n", depth, nErrors);
   size_t nStatesPerError;
-  //printState(state, states->depth);
+  //printStates(states, depth+1);
   /*
   if (isStateInserted(states->states[depth][nErrors], states->nStates[depth][nErrors], state)) {
     return NULL;
@@ -196,6 +198,7 @@ state_t *addState (states_t *states, size_t depth, size_t nErrors) {
     }
   }
   //printf("Add states finishes with index (count 1) %zu\n", nStatesPerError - 1);
+  //printStates(states, depth+1);
   return &states->states[nErrors][nStatesPerError - 1];
   //return &states->states[nErrors][states->nStatesPerError[nErrors]-1];
 }
@@ -233,10 +236,13 @@ states_t *initializeStates(size_t treeSize) {
 }
 
 void backtrackStates(states_t *states, size_t level) {
+  //TODO Could be skipped in the levels do not change
   //printf("\t\t\tBacktracking to level %zu\n", level);
   //printStates(states, level);
   for (size_t i = level; i <= states->depth; ++i) {
     if (states->nStatesPerPosition[i] == 0) {
+      //printf("\t\t\tFinally2\n");
+      //printStates(states, level);
       return;
     }
     states->nStatesPerPosition[i] = 0;
@@ -244,7 +250,7 @@ void backtrackStates(states_t *states, size_t level) {
     states->maxErrors[i]          = SIZE_MAX;
     for (size_t j = 0; j <= parameters->maxNErrors; ++j) {
       states->nStates[i][j] = 0;
-      states->firstState[i][j] = ((i == 0)? 0: states->firstState[i-1][j]);
+      states->firstState[i+1][j] = states->firstState[i][j];
     }
   }
   //printf("\t\t\tFinally\n");

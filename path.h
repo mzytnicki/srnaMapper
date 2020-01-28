@@ -220,7 +220,7 @@ bool goRightTreeBase (path_t *path) {
   */
   path->nCells = path->depth;
   path->cellIds[path->nCells] = path->cellIds[path->nCells] + 1;
-  //printf("      Leaving base will cell %" PRIu64 ", nucleotide %c, read %s\n", path->cellIds[path->nCells], "ACGT"[newNucleotide], path->read + path->readPos);
+  //printf("      Leaving base will cell %" PRIu32 ", nucleotide %c, read %s\n", path->cellIds[path->nCells], "ACGT"[newNucleotide], path->read + path->readPos);
   path->edgeLength = 0;
   return true;
 }
