@@ -79,6 +79,7 @@ void freeCellInfos (cellInfos_t *cellInfos) {
 
 void addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t readSize, count_t *counts, unsigned int nSamples) {
   assert(cellInfos->nCellInfos < cellInfos->nAllocatedCellInfos);
+  //printf("Setting cell info #%" PRIu32 "\n", cellId);
   setCellInfo(&cellInfos->cellInfos[cellInfos->nCellInfos], cellId, quality, readSize, counts, nSamples);
   ++cellInfos->nCellInfos;
 }

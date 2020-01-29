@@ -425,6 +425,7 @@ bool __filterTree (const tree_t *tree, size_t readPos, uint64_t cellId, unsigned
   unsigned short nucleotide;
   //printf("\tCurrent triplet: %u @ readPos: %zu\n", prevTriplet, readPos);
   if (findQuality(&tree->qualities, cellId) != NULL) {
+    //printf("\t\tHas quality\n");
     foundRead = true;
   }
   for (unsigned short edgeId = 0; edgeId < N_NUCLEOTIDES; ++edgeId) {
