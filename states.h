@@ -159,8 +159,8 @@ bool isStateInserted (state_t *states, size_t nStates, state_t *state) {
 state_t *addState (states_t *states, size_t depth, size_t nErrors) {
   assert(depth <= states->depth);
   //printf("Adding state @ depth %zu, %zu errors\n", depth, nErrors);
-  size_t nStatesPerError;
   //printStates(states, depth+1);
+  size_t nStatesPerError;
   /*
   if (isStateInserted(states->states[depth][nErrors], states->nStates[depth][nErrors], state)) {
     return NULL;
@@ -229,6 +229,7 @@ states_t *initializeStates(size_t treeSize) {
   baseState->interval.k    = 0;
   baseState->interval.l    = bwt->seq_len;
   baseState->trace         = 0;
+  baseState->nucleotide    = 0;
   baseState->previousState = 0;
   createSW(states->sw, states->depth);
   createBwtBuffer(states->bwtBuffer);

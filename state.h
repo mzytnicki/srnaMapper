@@ -22,7 +22,15 @@ struct state_t {
   unsigned int previousState;
 };
 
+void setEmptyState (state_t *state) {
+  state->interval.k = state->interval.l = 0;
+  state->trace         = 0;
+  state->nucleotide    = 0;
+  state->previousState = -1;
+}
+
 void setState (state_t *state, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
+  //printf("Setting state to %" PRIu64 "-%" PRIu64 ", %c\n", interval->k, interval->l, "ACGT"[nucleotide]);
   state->interval      = *interval;
   state->trace         = trace;
   state->nucleotide    = nucleotide;
@@ -51,6 +59,7 @@ void printState (state_t *state, size_t maxDepth) {
   for (size_t i = 0; i < maxDepth; ++i) {
     bwtint_t p = is_rev? p1-i: p1+i;
     if (p == ULONG_MAX) {
+      maxDepth = i;
       tmpSeq1[i] = 0;
       break;
     }
@@ -61,6 +70,7 @@ void printState (state_t *state, size_t maxDepth) {
   for (size_t i = 0; i < maxDepth; ++i) {
     bwtint_t p = is_rev? p2-i: p2+i;
     if (p == ULONG_MAX) {
+      maxDepth = i;
       tmpSeq2[i] = 0;
       break;
     }

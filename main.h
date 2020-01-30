@@ -98,12 +98,12 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   //printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]); fflush(stdout);
   /*
   if (states->nStates[depth-1][nErrors] >= MANY_STATES) {
-    states->nStates[depth-1][nErrors] = simplifyStates(states->states[depth-1][nErrors], states->nStates[depth-1][nErrors]);
+    simplifyStates(states, depth-1, nErrors);
   }
   */
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors]; ++stateId) {
     previousState = getState(states, depth-1, nErrors, stateId);
-    //printf("Previous state is %p\n", previousState);
+    //printf("Previous state with %zu errors, @ depth %zu, id %zu: %p\n", nErrors, depth-1, stateId, previousState);
     //printState(previousState, depth);
     //printStates(states, depth); fflush(stdout);
     if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
@@ -405,7 +405,8 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
 bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, outputSam_t *outputSam) {
   //printf("    Entering tryShortCuts will cell %" PRIu32 " at depth %zu, last nt %i, and read pos %zu, edge len: %zu\n", path->cellIds[path->nCells], path->depth, path->nucleotides[path->depth-1], path->readPos, path->edgeLength);
   //printPath(path);
-  state_t bestStates[tree->depth + parameters->maxNErrors + 1];
+  unsigned int maxNAlignments = tree->depth + parameters->maxNErrors + 1;
+  state_t bestStates[maxNAlignments];
   unsigned int currentNErrors, bestNErrors = parameters->maxNErrors + 1, baseNErrors = 0;
   unsigned int bestStateId = 0;
   unsigned int alignmentSize = 0;
@@ -425,6 +426,11 @@ bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, outputSam_t *
   cellInfo_t *cellInfo;
   edge_t *edge;
   unsetReadSequence(states->sw);
+  /*
+  for (size_t bestStateId = 0; bestStateId < tree->depth + parameters->maxNErrors + 1; ++bestStateId) {
+    setEmptyState(&bestStates[bestStateId]);
+  }
+  */
   // Tree is unbranched, so take everything for now on.
   do {
     edge = getFirstEdge2(tree, cell);
@@ -472,6 +478,7 @@ bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, outputSam_t *
           alignmentSize = states->sw->alignmentSize;
           bestPos       = states->sw->poss[genomeSequenceId];
           bestStrand    = states->sw->strands[genomeSequenceId];
+          assert(alignmentSize <= maxNAlignments);
           memcpy(bestStates, states->sw->states, alignmentSize * sizeof(state_t));
           //printf("    Step1.4: %" PRIu64 "\n", cellId);
         }
@@ -500,16 +507,17 @@ bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, outputSam_t *
   else {
     computeBacktrace(states, previousDepth, baseNErrors, bestStateId, outputSam);
   }
-  ////printf("    Step3: %" PRIu64 "\n", cellId);
+  //printf("    Step3: %" PRIu64 "\n", cellId);
   //printPath(path); fflush(stdout);
   for (unsigned int i = 0; i < alignmentSize; ++i) {
+    //printf("Alignment copy: %u/%u\n", i, alignmentSize);
     nextState = addState(states, path->depth, currentNErrors);
     if (nextState == NULL) {
       return false;
     }
     //printf("\tbest state: %c/%c\n", CIGAR[bestStates[i].trace], "ACGT"[bestStates[i].nucleotide]);
     setState(nextState, &bestStates[i].interval, bestStates[i].trace, bestStates[i].nucleotide, bestStateId);
-    //printState(nextState, 101); fflush(stdout);
+    //printState(nextState, 10); fflush(stdout);
     if (! hasTrace(nextState, DELETION)) {
       //printf("\t\tAdding nucleotide %c\n", "ACGT"[bestStates[i].trace & NUCLEOTIDE_MASK]);
       appendNucleotidePath(path, bestStates[i].nucleotide, DNA5_TO_CHAR[bestStates[i].nucleotide]);

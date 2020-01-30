@@ -77,6 +77,9 @@ void createSW (sw_t *sw, size_t depth) {
     sw->matrix[i][parameters->maxNErrors-i].backTrace = SW_INSERTION;
   }
   sw->states = (state_t *) malloc(sw->nCols * sizeof(state_t));
+  for (unsigned int i = 0; i < sw->nCols; ++i) {
+    setEmptyState(&sw->states[i]);
+  }
 }
 
 void freeSW (sw_t *sw) {
