@@ -106,6 +106,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
     //printf("Previous state with %zu errors, @ depth %zu, id %zu: %p\n", nErrors, depth-1, stateId, previousState);
     //printState(previousState, depth);
     //printStates(states, depth); fflush(stdout);
+    ++stats->nBwtPerDepth[depth-1];
     if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
       mapFound = true;
       nextState = addState(states, depth, nErrors);
@@ -154,6 +155,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
     }
     // add mismatches
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
+      ++stats->nBwtPerDepth[depth-1];
       if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
         //addState(states, depth-1, nErrors, &newState);
         if (nt != path->nucleotides[depth-1]) {
@@ -173,6 +175,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
     previousState = getState(states, depth, nErrors-1, stateId);
     if (! hasTrace(previousState, INSERTION)) {
       for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
+        ++stats->nBwtPerDepth[depth];
         if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
           nextState = addState(states, depth, nErrors);
           if (nextState == NULL) {

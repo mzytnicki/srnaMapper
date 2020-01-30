@@ -1,6 +1,8 @@
 #ifndef QUALITY_H
 #define QUALITY_H
 
+#include "constants.h"
+
 /******* Quality type *******/
 /**
  * A quality the quality of a set of reads with the same sequence.

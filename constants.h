@@ -70,6 +70,9 @@
 #define MAX_CIGAR_SIZE 510
 #define MAX_QNAME_SIZE 255
 
+// Should not do this, but whatever... Not really used...
+#define MAX_READ_LENGTH 500
+
 #define BWT_BUFFER_SIZE 10
 
 typedef unsigned long count_t;
