@@ -20,61 +20,61 @@
  */
 
 bool compareBwtIntervals (bwtinterval_t *i1, bwtinterval_t *i2) {
+  if (i1->l == 0) return false;
+  if (i2->l == 0) return false;
   return ((i1->k == i2->k) && (i1->l == i2->l));
 }
 
+
 typedef struct {
-  unsigned int   index;    
-  bwtinterval_t  previousIntervals[BWT_BUFFER_SIZE];
-  unsigned short nucleotides[BWT_BUFFER_SIZE];
-  bwtinterval_t  nextIntervals[BWT_BUFFER_SIZE];
-  bool           full;
+  bwtinterval_t interval;
+  bwtinterval_t nextIntervals[N_NUCLEOTIDES];
+} bwt_buffer_data_t;
+
+typedef struct {
+  bwt_buffer_data_t intervals[BWT_BUFFER_SIZE];
 } bwt_buffer_t;
 
 void createBwtBuffer (bwt_buffer_t *bwtBuffer) {
-  bwtBuffer->index = 0;
-  bwtBuffer->full  = false;
+  for (size_t bufferId = 0; bufferId < BWT_BUFFER_SIZE; ++bufferId) {
+    bwtBuffer->intervals[bufferId].interval.l = 0;
+    for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
+      bwtBuffer->intervals[bufferId].nextIntervals[nt].l = 0;
+    }
+  }
+}
+
+size_t getBwtBufferIndex (bwtinterval_t interval) {
+  return ((interval.k + interval.l) % BWT_BUFFER_SIZE);
 }
 
 void addToBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide, bwtinterval_t nextInterval) {
-  bwtBuffer->previousIntervals[bwtBuffer->index] = previousInterval;
-  bwtBuffer->nucleotides[bwtBuffer->index] = nucleotide;
-  bwtBuffer->nextIntervals[bwtBuffer->index] = nextInterval;
-  ++bwtBuffer->index;
-  if (bwtBuffer->index == BWT_BUFFER_SIZE) {
-    bwtBuffer->index = 0;
-    bwtBuffer->full = true;
+  size_t bufferId = getBwtBufferIndex (previousInterval);
+  bwt_buffer_data_t *bufferData = &bwtBuffer->intervals[bufferId];
+  if (! compareBwtIntervals(&previousInterval, &bufferData->interval)) {
+    bufferData->interval = previousInterval;    
+    for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
+      bufferData->nextIntervals[nt].l = 0;
+    }
   }
+  bufferData->nextIntervals[nucleotide] = nextInterval;
 }
 
 bwtinterval_t *findInBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide) {
-  return NULL;
-  unsigned int searchIndex = 0;
+  size_t bufferId = getBwtBufferIndex (previousInterval);
+  bwt_buffer_data_t *bufferData = &bwtBuffer->intervals[bufferId];
   ++stats->nBufferCalls;
-  if (bwtBuffer->index == 0) {
-    if (! bwtBuffer->full) {
-      return NULL;
-    }
-    searchIndex = BWT_BUFFER_SIZE - 1;
-  }
-  while (searchIndex != bwtBuffer->index) {
-    if (compareBwtIntervals(&previousInterval, &bwtBuffer->previousIntervals[searchIndex]) && (nucleotide == bwtBuffer->nucleotides[searchIndex])) {
+  if (compareBwtIntervals(&previousInterval, &bufferData->interval)) {
+    if (bufferData->nextIntervals[nucleotide].l != 0) {
       ++stats->nBufferCallSucesses;
-      return &bwtBuffer->nextIntervals[searchIndex];
-    }
-    if (searchIndex == 0) {
-      if (! bwtBuffer->full) {
-        return NULL;
-      }
-      searchIndex = BWT_BUFFER_SIZE - 1;
-    }
-    else { 
-      --searchIndex;
+      //printf("Buffered!\n");
+      return &bufferData->nextIntervals[nucleotide];
     }
   }
   return NULL;
 }
 
+/*
 bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short nucleotide, bwtinterval_t *newInterval) {
   //printf("    Going down BWT from range %" PRId64 "-%" PRIu64 " and nt %hu, preprocessed: %s\n", getStateInterval(previousState)->k, getStateInterval(previousState)->l, nucleotide, (previousState->trace & PREPROCESSED)? "true": "false");
   bwtinterval_t *newIntervalInBuffer = findInBwtBuffer(bwtBuffer, previousState->interval, nucleotide);
@@ -91,5 +91,44 @@ bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short 
   //if (newState->interval.k <= newState->interval.l) printf("      ok!\n");
   return (newInterval->k <= newInterval->l);
 }
+*/
+
+bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short nucleotide, bwtinterval_t *newInterval) {
+  bwtinterval_t *bufferedInterval = findInBwtBuffer(bwtBuffer, previousState->interval, nucleotide);
+  if (bufferedInterval != NULL) {
+    *newInterval = *bufferedInterval;
+    return (newInterval->k <= newInterval->l);
+  }
+  ++stats->nDown;
+  bwt_2occ(bwt, previousState->interval.k-1, previousState->interval.l, nucleotide, &newInterval->k, &newInterval->l);
+  newInterval->k = bwt->L2[nucleotide] + newInterval->k + 1;
+  newInterval->l = bwt->L2[nucleotide] + newInterval->l;
+  //if (newState->interval.k <= newState->interval.l) printf("      ok!\n");
+  addToBwtBuffer(bwtBuffer, previousState->interval, nucleotide, *newInterval);
+  return (newInterval->k <= newInterval->l);
+}
+
+/*
+void goDownBwt3Nt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short nucleotide, bwtinterval_t *newIntervals) {
+  for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
+    ++stats->nDown;
+    if (nt != nucleotide) {
+      bwt_2occ(bwt, previousState->interval.k-1, previousState->interval.l, nucleotide, &newIntervals[nt].k, &newIntervals[nt].l);
+      newIntervals[nt].k = bwt->L2[nt] + newIntervals[nt].k + 1;
+      newIntervals[nt].l = bwt->L2[nt] + newIntervals[nt].l;
+    }
+  }
+}
+
+void goDownBwt4Nt (bwt_buffer_t *bwtBuffer, state_t *previousState, bwtinterval_t *newIntervals) {
+  for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
+    ++stats->nDown;
+    bwt_2occ(bwt, previousState->interval.k-1, previousState->interval.l, nt, &newIntervals[nt].k, &newIntervals[nt].l);
+    newIntervals[nt].k = bwt->L2[nt] + newIntervals[nt].k + 1;
+    newIntervals[nt].l = bwt->L2[nt] + newIntervals[nt].l;
+  }
+}
+*/
+
 
 #endif

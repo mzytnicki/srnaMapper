@@ -44,19 +44,6 @@ state_t *getState(const states_t *states, size_t depth, size_t nErrors, size_t i
   return &states->states[nErrors][states->firstState[depth][nErrors]+i];
 }
 
-/*
-bool goDownBwt (state_t *previousState, unsigned short nucleotide, state_t *newState) {
-  ++stats->nDown;
-  //printf("    Going down BWT from range %" PRId64 "-%" PRIu64 " and nt %hu, preprocessed: %s\n", getStateInterval(previousState)->k, getStateInterval(previousState)->l, nucleotide, (previousState->trace & PREPROCESSED)? "true": "false");
-  bwt_2occ(bwt, getStateInterval(previousState)->k-1, getStateInterval(previousState)->l, nucleotide, &newState->interval.k, &newState->interval.l);
-  newState->interval.k = bwt->L2[nucleotide] + newState->interval.k + 1;
-  newState->interval.l = bwt->L2[nucleotide] + newState->interval.l;
-  //if (newState->interval.k <= newState->interval.l) printf("      ok!\n");
-  newState->trace = 0;
-  return (newState->interval.k <= newState->interval.l);
-}
-*/
-
 void printStates (states_t *states, size_t depth) {
   for (size_t i = 0; i < depth; ++i) {
     if (states->minErrors[i] == SIZE_MAX) {

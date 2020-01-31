@@ -33,7 +33,7 @@ void printStats () {
   setlocale(LC_NUMERIC, "");
   printf("Very small sequences: %'lu/%'lu\n", stats->nShortReads, stats->nReads);
   printf("# max states %'zu/%'i\n", stats->maxNStates, N_STATES);
-  printf("# buffer call successes %'lu/%'lu (%i%%)\n", stats->nBufferCallSucesses, stats->nBufferCalls, (stats->nBufferCalls == 0)? 0: (int) (round(((double) stats->nBufferCallSucesses) / stats->nBufferCalls)));
+  printf("# buffer call successes %'lu/%'lu (%i%%)\n", stats->nBufferCallSucesses, stats->nBufferCalls, (stats->nBufferCalls == 0)? 0: (int) (round(((double) stats->nBufferCallSucesses) / stats->nBufferCalls * 100)));
   printf("# BWT calls:\n");
   for (size_t i = 0; i < MAX_READ_LENGTH; ++i) {
     if (stats->nBwtPerDepth[i] > 0) {

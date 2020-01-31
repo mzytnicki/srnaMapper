@@ -73,7 +73,7 @@
 // Should not do this, but whatever... Not really used...
 #define MAX_READ_LENGTH 500
 
-#define BWT_BUFFER_SIZE 10
+#define BWT_BUFFER_SIZE 10000
 
 typedef unsigned long count_t;
 

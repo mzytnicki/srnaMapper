@@ -135,6 +135,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
   //for (size_t i = 0; i < depth; ++i) putchar("ACGT"[path->nucleotides[i]]);
   //putchar('\n');
   //TODO may be skipped?
+  //bwtinterval_t nextIntervals[N_NUCLEOTIDES];
   bwtinterval_t nextInterval;
   state_t *previousState;
   state_t *nextState;
@@ -154,11 +155,17 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       setState(nextState, &previousState->interval, INSERTION, 0, stateId);
     }
     // add mismatches
+    /*
+    goDownBwt3Nt(states->bwtBuffer, previousState, path->nucleotides[depth-1], nextIntervals);
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
       ++stats->nBwtPerDepth[depth-1];
-      if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
+      if (nt != path->nucleotides[depth-1]) {
+    */
+    for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
+      ++stats->nBwtPerDepth[depth-1];
+      if (nt != path->nucleotides[depth-1]) {
         //addState(states, depth-1, nErrors, &newState);
-        if (nt != path->nucleotides[depth-1]) {
+        if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
           //printState(newState, path->maxDepth);
           nextState = addState(states, depth, nErrors);
           if (nextState == NULL) {
@@ -174,6 +181,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
   for (size_t stateId = 0; stateId < states->nStates[depth][nErrors-1]; ++stateId) {
     previousState = getState(states, depth, nErrors-1, stateId);
     if (! hasTrace(previousState, INSERTION)) {
+      //goDownBwt4Nt(states->bwtBuffer, previousState, nextIntervals);
       for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
         ++stats->nBwtPerDepth[depth];
         if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
