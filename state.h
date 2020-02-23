@@ -54,36 +54,38 @@ void printState (state_t *state, size_t maxDepth) {
   tmpSeq1[maxDepth] = 0;
   tmpSeq2[maxDepth] = 0;
   int is_rev;
-  bwtint_t p1 = bwt_sa(bwt, getStateInterval(state)->k); // position on the forward-reverse coordinate
-  p1 = bns_depos(bns, p1, &is_rev); // position on the forward strand; this may be the first base or the last base
-  for (size_t i = 0; i < maxDepth; ++i) {
-    bwtint_t p = is_rev? p1-i: p1+i;
-    if (p == ULONG_MAX) {
-      maxDepth = i;
-      tmpSeq1[i] = 0;
-      break;
+  if (state->interval.l == 0) {
+    bwtint_t p1 = bwt_sa(bwt, getStateInterval(state)->k); // position on the forward-reverse coordinate
+    p1 = bns_depos(bns, p1, &is_rev); // position on the forward strand; this may be the first base or the last base
+    for (size_t i = 0; i < maxDepth; ++i) {
+      bwtint_t p = is_rev? p1-i: p1+i;
+      if (p == ULONG_MAX) {
+        maxDepth = i;
+        tmpSeq1[i] = 0;
+        break;
+      }
+      tmpSeq1[i] = ((is_rev)? "TGCAN": "ACGTN")[_get_pac(pac, p)];
     }
-    tmpSeq1[i] = ((is_rev)? "TGCAN": "ACGTN")[_get_pac(pac, p)];
-  }
-  bwtint_t p2 = bwt_sa(bwt, getStateInterval(state)->l); // position on the forward-reverse coordinate
-  p2 = bns_depos(bns, p2, &is_rev); // position on the forward strand; this may be the first base or the last base
-  for (size_t i = 0; i < maxDepth; ++i) {
-    bwtint_t p = is_rev? p2-i: p2+i;
-    if (p == ULONG_MAX) {
-      maxDepth = i;
-      tmpSeq2[i] = 0;
-      break;
+    bwtint_t p2 = bwt_sa(bwt, getStateInterval(state)->l); // position on the forward-reverse coordinate
+    p2 = bns_depos(bns, p2, &is_rev); // position on the forward strand; this may be the first base or the last base
+    for (size_t i = 0; i < maxDepth; ++i) {
+      bwtint_t p = is_rev? p2-i: p2+i;
+      if (p == ULONG_MAX) {
+        maxDepth = i;
+        tmpSeq2[i] = 0;
+        break;
+      }
+      tmpSeq2[i] = ((is_rev)? "TGCAN": "ACGTN")[_get_pac(pac, p)];
     }
-    tmpSeq2[i] = ((is_rev)? "TGCAN": "ACGTN")[_get_pac(pac, p)];
-  }
-  for (s = 0; s < maxDepth; ++s) {
-    if (tmpSeq1[s] != tmpSeq2[s]) {
-      tmpSeq1[s] = 0;
-      break;
+    for (s = 0; s < maxDepth; ++s) {
+      if (tmpSeq1[s] != tmpSeq2[s]) {
+        tmpSeq1[s] = 0;
+        break;
+      }
     }
-  }
-  for (size_t i = 0; i < s; ++i) {
-    tmpSeq2[i] = tmpSeq1[s-i-1];
+    for (size_t i = 0; i < s; ++i) {
+      tmpSeq2[i] = tmpSeq1[s-i-1];
+    }
   }
   tmpSeq2[s] = 0;
   printf("\t\t\t\t%" PRIu64 "-%" PRIu64 " (%p): %s (%c/%c -> %u)\n", getStateInterval(state)->k, getStateInterval(state)->l, state, tmpSeq2, CIGAR[state->trace], "ACGT"[state->nucleotide], state->previousState);
@@ -93,12 +95,20 @@ bool areStatesEqual (state_t *state1, state_t *state2) {
   return ((getStateInterval(state1)->k == getStateInterval(state2)->k) && (getStateInterval(state1)->l == getStateInterval(state2)->l));
 }
 
+int intervalComp (const bwtinterval_t *i1, const bwtinterval_t *i2) {
+  int i = i1->k - i2->k;
+  if (i != 0) {
+    return i;
+  }
+  return i1->l - i2->l;
+}
+
 int stateComp (const state_t *state1, const state_t *state2) {
   int i = getStateInterval((state_t *) state1)->k - (getStateInterval((state_t *) state2)->k);
   if (i != 0) {
     return i;
   }
-  return (getStateInterval((state_t *) state1)->k - (getStateInterval((state_t *) state2)->k));
+  return (getStateInterval((state_t *) state1)->l - (getStateInterval((state_t *) state2)->l));
 }
 
 int sortCompareStates (const void *state1, const void *state2) {

@@ -20,8 +20,9 @@
  */
 
 bool compareBwtIntervals (bwtinterval_t *i1, bwtinterval_t *i2) {
-  if (i1->l == 0) return false;
-  if (i2->l == 0) return false;
+  assert(i1->l != 0);
+  //if (i2->l == 0) return false;
+  //if ((i1->l == 0) || (i2->l == 0)) return false;
   return ((i1->k == i2->k) && (i1->l == i2->l));
 }
 

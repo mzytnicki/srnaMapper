@@ -92,7 +92,7 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
 bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t nErrors) {
   assert(depth > 0);
   state_t *previousState;
-  state_t *nextState;
+  //state_t *nextState;
   bwtinterval_t nextInterval;
   bool mapFound = false;
   //printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]); fflush(stdout);
@@ -109,12 +109,9 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
     ++stats->nBwtPerDepth[depth-1];
     if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
       mapFound = true;
-      nextState = addState(states, depth, nErrors);
-      if (nextState == NULL) {
-        //printf("      cannot add state\n"); fflush(stdout);
-        return false;
-      }
-      setState(nextState, &nextInterval, MATCH, 0, stateId);
+      //nextState = addState(states, depth, nErrors);
+      //setState(nextState, &nextInterval, MATCH, 0, stateId);
+      addState(states, depth, nErrors, &nextInterval, MATCH, nt, stateId, false);
       //printf("Next state is %p\n", nextState);
       //printState(nextState, depth);
       //printStates(states, depth+1); fflush(stdout);
@@ -138,7 +135,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
   //bwtinterval_t nextIntervals[N_NUCLEOTIDES];
   bwtinterval_t nextInterval;
   state_t *previousState;
-  state_t *nextState;
+  //state_t *nextState;
   if ((states->maxErrors[depth] != SIZE_MAX) && (states->maxErrors[depth] >= nErrors)) {
     //printf("      first case: %zu/%zu/%zu %zu/%i\n", states->maxErrors[depth], nErrors, SIZE_MAX, states->nStates[depth][nErrors], N_STATES);
     return (states->nStates[depth][nErrors] < N_STATES);
@@ -148,11 +145,9 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
     //printState(state, path->maxDepth);
     // add insertion
     if (! hasTrace(previousState, DELETION)) {
-      nextState = addState(states, depth, nErrors);
-      if (nextState == NULL) {
-        return false;
-      }
-      setState(nextState, &previousState->interval, INSERTION, 0, stateId);
+      addState(states, depth, nErrors, &previousState->interval, INSERTION, 0, stateId, false);
+      //nextState = addState(states, depth, nErrors);
+      //setState(nextState, &previousState->interval, INSERTION, 0, stateId);
     }
     // add mismatches
     /*
@@ -167,12 +162,9 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
         //addState(states, depth-1, nErrors, &newState);
         if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
           //printState(newState, path->maxDepth);
-          nextState = addState(states, depth, nErrors);
-          if (nextState == NULL) {
-            //printf("      third case\n");
-            return false;
-          }
-          setState(nextState, &nextInterval, MISMATCH, nt, stateId);
+          //nextState = addState(states, depth, nErrors);
+          //setState(nextState, &nextInterval, MISMATCH, nt, stateId);
+          addState(states, depth, nErrors, &nextInterval, MISMATCH, nt, stateId, false);
         }
       }
     }
@@ -185,11 +177,9 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
         ++stats->nBwtPerDepth[depth];
         if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
-          nextState = addState(states, depth, nErrors);
-          if (nextState == NULL) {
-            return false;
-          }
-          setState(nextState, &nextInterval, DELETION, nt, stateId);
+          //nextState = addState(states, depth, nErrors);
+          //setState(nextState, &nextInterval, DELETION, nt, stateId);
+          addState(states, depth, nErrors, &nextInterval, DELETION, nt, stateId, false);
         }
       }
     }
@@ -522,13 +512,23 @@ bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, outputSam_t *
   //printPath(path); fflush(stdout);
   for (unsigned int i = 0; i < alignmentSize; ++i) {
     //printf("Alignment copy: %u/%u\n", i, alignmentSize);
-    nextState = addState(states, path->depth, currentNErrors);
+    //nextState = addState(states, path->depth, currentNErrors);
+    //setState(nextState, &bestStates[i].interval, bestStates[i].trace, bestStates[i].nucleotide, bestStateId);
+    //printf("\tbest state: %c/%c\n", CIGAR[bestStates[i].trace], "ACGT"[bestStates[i].nucleotide]);
+    //printState(nextState, 10); fflush(stdout);
+    // TODO: is this really correct?
+    /*
     if (nextState == NULL) {
+      path->nCells  = previousNCells;
+      path->depth   = previousDepth;
+      path->readPos = previousReadPos;
+      backtrackStates(states, path->depth);
       return false;
     }
-    //printf("\tbest state: %c/%c\n", CIGAR[bestStates[i].trace], "ACGT"[bestStates[i].nucleotide]);
-    setState(nextState, &bestStates[i].interval, bestStates[i].trace, bestStates[i].nucleotide, bestStateId);
-    //printState(nextState, 10); fflush(stdout);
+    */
+    nextState = addState(states, path->depth+1, currentNErrors, &bestStates[i].interval, bestStates[i].trace, bestStates[i].nucleotide, bestStateId, true);
+    //printState(nextState, path->depth+1); fflush(stdout);
+    assert(nextState != NULL);
     if (! hasTrace(nextState, DELETION)) {
       //printf("\t\tAdding nucleotide %c\n", "ACGT"[bestStates[i].trace & NUCLEOTIDE_MASK]);
       appendNucleotidePath(path, bestStates[i].nucleotide, DNA5_TO_CHAR[bestStates[i].nucleotide]);
@@ -681,17 +681,14 @@ void _map (tree2_t *tree, states_t *states, path_t *path, outputSam_t *outputSam
   bool mappable = true;
   cellInfo_t *cellInfo;
   while (true) {
+    //printPath(path); fflush(stdout);
+    //printf("%" PRIu32 ": ", path->cellIds[path->nCells]);
+    //printCell2(&tree->cells[path->cellIds[path->nCells]]);
+    //printf("\n");
     if ((mappable) && (shortCutCondition(states, tree, path))) {
+      //printf("Short cut with positive exit\n"); fflush(stdout);
       tryShortCuts2(tree, states, path, outputSam);
       mappable = false;
-      /*
-      if (mappable) {
-        //printf("Short cut with positive exit\n"); fflush(stdout);
-        if ((quality = findQuality(&tree->qualities, path->cellIds[path->nCells])) != NULL) {
-          printRead(states, path, quality, tree->cells[path->cellIds[path->nCells]].counts, outputSam);
-        }
-      }
-      */
     }
     else {
       // advance in the tree
@@ -699,10 +696,6 @@ void _map (tree2_t *tree, states_t *states, path_t *path, outputSam_t *outputSam
       if (! goNextTree2(tree, states, path, mappable)) {
         return;
       }
-      //printPath(path); fflush(stdout);
-      //printf("%" PRIu64 ": ", path->cellIds[path->nCells]);
-      //printCell(&tree->cells[path->cellIds[path->nCells]]);
-      //printf("\n");
       // prefix of the read is not mappable
       mappable = findBestMapping(states, path);
       //printf("\tRead is mappable: %s\n", (mappable)? "yes": "no");
