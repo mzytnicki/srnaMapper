@@ -73,7 +73,7 @@ void freeOutputSam (outputSam_t *outputSam) {
 void writeQname (outputSam_t *outputSam, count_t *counts) {
   size_t qnameLength = sprintf(outputSam->qname, "read%lu_x", ++nReads);
   for (size_t readsFileId = 0; readsFileId < parameters->nReadsFiles; ++readsFileId) {
-    qnameLength += sprintf(outputSam->qname+qnameLength, "_%lu", counts[readsFileId]);
+    qnameLength += sprintf(outputSam->qname+qnameLength, "_%" PRIu32, counts[readsFileId]);
   }
 }
 

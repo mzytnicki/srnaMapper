@@ -46,7 +46,10 @@ void createBwtBuffer (bwt_buffer_t *bwtBuffer) {
 }
 
 size_t getBwtBufferIndex (bwtinterval_t interval) {
+  //TODO: Compute a "good" hash function here
+  //return (interval.k * 106039 + interval.l) & BWT_BUFFER_MASK;
   return ((interval.k + interval.l) % BWT_BUFFER_SIZE);
+  //return ((interval.k + interval.l) % BWT_BUFFER_SIZE);
 }
 
 void addToBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide, bwtinterval_t nextInterval) {

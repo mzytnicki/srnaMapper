@@ -319,7 +319,7 @@ void __printTree (const tree_t *tree, FILE *outFile, uint64_t *readId, char *rea
     ++(*readId);
     fprintf(outFile, "@read%" PRIu64 "_", *readId);
     for (unsigned int fileId = 0; fileId < parameters->nReadsFiles; ++fileId) {
-      fprintf(outFile, "_%lu", cell->counts[fileId]);
+      fprintf(outFile, "_%" PRIu32, cell->counts[fileId]);
     }
     fprintf(outFile, "\n%s\n+\n%s\n", read+tree->depth-readPos, quality);
     //assert(strlen(read+tree->depth-readPos) == strlen(cell->quality));

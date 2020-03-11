@@ -42,7 +42,7 @@ void printStats () {
   printf("# BWT calls:\n");
   for (size_t i = 0; i < MAX_READ_LENGTH; ++i) {
     if (stats->nBwtPerDepth[i] > 0) {
-      printf("\tDepth %3zu: %'11llu\n", i, stats->nBwtPerDepth[i]);
+      printf("\tDepth %3zu: %'13llu\n", i, stats->nBwtPerDepth[i]);
     }
   }
   setlocale(LC_ALL, savedLocale);
