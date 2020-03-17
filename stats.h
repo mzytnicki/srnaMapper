@@ -2,17 +2,18 @@
 #define STATS_H
 
 #include "constants.h"
+#include "parameters.h"
 
 typedef struct {
-  unsigned long int nReads;
-  unsigned long int nShortReads;
-  unsigned long int nDown;
-  unsigned long int nDownPreprocessed;
-  unsigned long int nBufferCalls;
-  unsigned long int nBufferCallSucesses;
-  size_t            maxNStates;
-  unsigned long int nTentativeStateInsertions;
-  unsigned long int nSkippedStateInsertions;
+  unsigned long int      nReads;
+  unsigned long int      nShortReads;
+  //unsigned long int      nDown;
+  //unsigned long int      nDownPreprocessed;
+  unsigned long int      nBufferCalls;
+  unsigned long int      nBufferCallSucesses;
+  size_t                *maxNStates;
+  unsigned long int      nTentativeStateInsertions;
+  unsigned long int      nSkippedStateInsertions;
   unsigned long long int nBwtPerDepth[MAX_READ_LENGTH];
 } stats_t;
 
@@ -21,11 +22,11 @@ stats_t *stats;
 void initializeStats () {
   stats->nReads                    = 0;
   stats->nShortReads               = 0;
-  stats->nDown                     = 0;
-  stats->nDownPreprocessed         = 0;
+  //stats->nDown                     = 0;
+  //stats->nDownPreprocessed         = 0;
   stats->nBufferCalls              = 0;
   stats->nBufferCallSucesses       = 0;
-  stats->maxNStates                = 0;
+  stats->maxNStates                = (size_t *) calloc(parameters->maxNErrors, sizeof(size_t));
   stats->nTentativeStateInsertions = 0;
   stats->nSkippedStateInsertions   = 0;
   memset(stats->nBwtPerDepth, 0, MAX_READ_LENGTH * sizeof(unsigned long long int));
@@ -36,7 +37,11 @@ void printStats () {
   savedLocale = setlocale (LC_ALL, NULL);
   setlocale(LC_NUMERIC, "");
   printf("Very small sequences: %'lu/%'lu\n", stats->nShortReads, stats->nReads);
-  printf("# max states %'zu/%'i\n", stats->maxNStates, N_STATES);
+  printf("# max states:");
+  for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
+    printf(" %'zu: %'zu ", nErrors, stats->maxNStates[nErrors]);
+  }
+  printf("\n");
   printf("# buffer call successes %'lu/%'lu (%i%%)\n", stats->nBufferCallSucesses, stats->nBufferCalls, (stats->nBufferCalls == 0)? 0: (int) (round(((double) stats->nBufferCallSucesses) / stats->nBufferCalls * 100)));
   printf("# state insertion skipped %'lu/%'lu (%i%%)\n", stats->nSkippedStateInsertions, stats->nTentativeStateInsertions, (stats->nTentativeStateInsertions == 0)? 0: (int) (round(((double) stats->nSkippedStateInsertions) / stats->nTentativeStateInsertions * 100)));
   printf("# BWT calls:\n");

@@ -163,10 +163,11 @@ state_t *allocateNewState (states_t *states, size_t depth, size_t nErrors) {
   ++states->nStates[depth][nErrors];
   ++states->nStatesPerPosition[depth];
   nStatesPerError = states->firstState[depth][nErrors] + states->nStates[depth][nErrors];
-  stats->maxNStates = MAX(stats->maxNStates, nStatesPerError);
+  stats->maxNStates[nErrors] = MAX(stats->maxNStates[nErrors], nStatesPerError);
   if (nStatesPerError == states->allocatedNStates[nErrors]-1) {
     states->allocatedNStates[nErrors] *= 2;
     states->states[nErrors] = (state_t *) realloc(states->states[nErrors], states->allocatedNStates[nErrors] * sizeof(state_t));
+    printf("Reallocating states with %zu errors to %zu states\n", nErrors, states->allocatedNStates[nErrors]);
     if (states->states[nErrors] == NULL) {
       fprintf(stderr, "Memory error: Cannot allocate an array of States for errors %zu of size %zu * %zu\n", nErrors, states->allocatedNStates[nErrors], sizeof(state_t));
       exit(EXIT_FAILURE);
@@ -321,7 +322,9 @@ states_t *initializeStates(size_t treeSize) {
     states->minErrors[depth] = SIZE_MAX;
     states->maxErrors[depth] = SIZE_MAX;
   }
-  for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
+  states->allocatedNStates[0] = treeSize + 3;
+  states->states[0] = (state_t *) malloc(states->allocatedNStates[0] * sizeof(states_t));
+  for (size_t nErrors = 1; nErrors <= parameters->maxNErrors; ++nErrors) {
     states->allocatedNStates[nErrors] = N_STATES;
     states->states[nErrors] = (state_t *) malloc(states->allocatedNStates[nErrors] * sizeof(states_t));
   }

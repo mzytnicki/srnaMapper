@@ -23,6 +23,8 @@ bool compareBwtIntervals (bwtinterval_t *i1, bwtinterval_t *i2) {
   assert(i1->l != 0);
   //if (i2->l == 0) return false;
   //if ((i1->l == 0) || (i2->l == 0)) return false;
+  // TODO: Does that really work?  Maybe a padding problem?
+  // return (memcmp(i1, i2, sizeof(bwtinterval_t)) == 0);
   return ((i1->k == i2->k) && (i1->l == i2->l));
 }
 
@@ -103,7 +105,7 @@ bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short 
     *newInterval = *bufferedInterval;
     return (newInterval->k <= newInterval->l);
   }
-  ++stats->nDown;
+  //++stats->nDown;
   bwt_2occ(bwt, previousState->interval.k-1, previousState->interval.l, nucleotide, &newInterval->k, &newInterval->l);
   newInterval->k = bwt->L2[nucleotide] + newInterval->k + 1;
   newInterval->l = bwt->L2[nucleotide] + newInterval->l;

@@ -123,6 +123,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
 
 /**
  * Find the mappings with nErrors at depth.
+ * Return true if at least a state was added.
  * Supposes that mappings at depth-1 with nErrors are computed.
  * Supposes that mappings at depth with nErrors-1 are computed.
  */
@@ -135,10 +136,11 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
   //bwtinterval_t nextIntervals[N_NUCLEOTIDES];
   bwtinterval_t nextInterval;
   state_t *previousState;
+  bool stateAdded = false;
   //state_t *nextState;
   if ((states->maxErrors[depth] != SIZE_MAX) && (states->maxErrors[depth] >= nErrors)) {
     //printf("      first case: %zu/%zu/%zu %zu/%i\n", states->maxErrors[depth], nErrors, SIZE_MAX, states->nStates[depth][nErrors], N_STATES);
-    return (states->nStates[depth][nErrors] < N_STATES);
+    return false;
   }
   for (size_t stateId = 0; stateId < states->nStates[depth-1][nErrors-1]; ++stateId) {
     previousState = getState(states, depth-1, nErrors-1, stateId);
@@ -146,6 +148,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
     // add insertion
     if (! hasTrace(previousState, DELETION)) {
       addState(states, depth, nErrors, &previousState->interval, INSERTION, 0, stateId, false);
+      stateAdded = true;
       //nextState = addState(states, depth, nErrors);
       //setState(nextState, &previousState->interval, INSERTION, 0, stateId);
     }
@@ -165,6 +168,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
           //nextState = addState(states, depth, nErrors);
           //setState(nextState, &nextInterval, MISMATCH, nt, stateId);
           addState(states, depth, nErrors, &nextInterval, MISMATCH, nt, stateId, false);
+          stateAdded = true;
         }
       }
     }
@@ -180,15 +184,13 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
           //nextState = addState(states, depth, nErrors);
           //setState(nextState, &nextInterval, DELETION, nt, stateId);
           addState(states, depth, nErrors, &nextInterval, DELETION, nt, stateId, false);
+          stateAdded = true;
         }
       }
     }
   }
-  if (! mapWithoutError(states, depth, path->nucleotides[depth-1], nErrors)) {
-    if (states->nStates[depth][nErrors] == N_STATES-1) {
-      //printf("      fourth case\n");
-      return false;
-    }
+  if (mapWithoutError(states, depth, path->nucleotides[depth-1], nErrors)) {
+    stateAdded = true;
   }
   //TODO adapth this
   /*
@@ -197,11 +199,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
   }
   */
   //states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
-  if (states->nStates[depth][nErrors] >= N_STATES) {
-    //printf("      fifth case: # states = %zu >= %i after simplification.\n", states->nStates[depth][nErrors], N_STATES);
-    return false;
-  }
-  return true;
+  return stateAdded;
 }
 
 /**
@@ -211,6 +209,7 @@ bool addError (states_t *states, path_t *path) {
   size_t nErrors = states->minErrors[path->depth-1] + 1;
   size_t firstDepth;
   bool firstDepthFound = false;
+  bool stateAdded = false;
   // Find the first place where the mappings with nErrors are computed
   for (firstDepth = path->depth; (firstDepth > 1) && (! firstDepthFound); --firstDepth) {
     for (size_t nucleotide = 0; (nucleotide < N_NUCLEOTIDES) && (! firstDepthFound); ++nucleotide) {
@@ -221,12 +220,12 @@ bool addError (states_t *states, path_t *path) {
   if (firstDepthFound) firstDepth += 2;
   //printf("  adding error with %zu @ %zu from %zu\n", nErrors, path->depth, firstDepth);
   for (size_t depth = firstDepth; depth <= path->depth; ++depth) {
-    if (! _addError(states, path, nErrors, depth)) {
+    if (_addError(states, path, nErrors, depth)) {
       //printf("    too many errors\n");
-      return false;
+      stateAdded = true;
     }
   }
-  return true;
+  return stateAdded;
 }
 
 /**
