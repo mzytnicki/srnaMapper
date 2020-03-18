@@ -1,5 +1,5 @@
-CPPC=clang++
 CC=gcc
+CPPC=g++
 CFLAGS=-Wall -Wextra $(OFLAGS) -pthread
 LFLAGS=-lrt
 ifdef DEBUG
@@ -9,7 +9,7 @@ else ifdef PROF
 else ifdef PERF
 	OFLAGS=-O3 -DNDEBUG -march=native -fprofile-use -g
 else ifdef VTUNE
-	OFLAGS=-O2 -DNDEBUG -march=native -g -shared-libgcc
+	OFLAGS=-O3 -DNDEBUG -march=native -g -shared-libgcc
 else
 	OFLAGS=-O3 -DNDEBUG -march=native -g -msse2 -mavx
 endif
