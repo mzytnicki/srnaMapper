@@ -5,6 +5,7 @@
 #include "stats.h"
 #include "state.h"
 
+
 /******* BWT-interval type *******/
 /**
  * A BWT-interval coresponds to a suffix of the genome.
@@ -40,21 +41,23 @@ typedef struct {
 
 void createBwtBuffer (bwt_buffer_t *bwtBuffer) {
   for (size_t bufferId = 0; bufferId < BWT_BUFFER_SIZE; ++bufferId) {
+    bwtBuffer->intervals[bufferId].interval.k = 0;
     bwtBuffer->intervals[bufferId].interval.l = 0;
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
+      bwtBuffer->intervals[bufferId].nextIntervals[nt].k = 0;
       bwtBuffer->intervals[bufferId].nextIntervals[nt].l = 0;
     }
   }
 }
 
-size_t getBwtBufferIndex (bwtinterval_t interval) {
+size_t getBwtHash (bwtinterval_t interval) {
   //TODO: Compute a "good" hash function here
   // return ((interval.k * 98317 ^ interval.l * 49157) % BWT_BUFFER_SIZE);
-  return ((interval.k + interval.l) % BWT_BUFFER_SIZE);
+  return (interval.k + interval.l);
 }
 
 void addToBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide, bwtinterval_t nextInterval) {
-  size_t bufferId = getBwtBufferIndex (previousInterval);
+  size_t bufferId = getBwtHash(previousInterval) % BWT_BUFFER_SIZE;
   bwt_buffer_data_t *bufferData = &bwtBuffer->intervals[bufferId];
   if (! compareBwtIntervals(&previousInterval, &bufferData->interval)) {
     bufferData->interval = previousInterval;    
@@ -66,9 +69,10 @@ void addToBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, un
 }
 
 bwtinterval_t *findInBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide) {
-  size_t bufferId = getBwtBufferIndex (previousInterval);
+  size_t bufferId = getBwtHash(previousInterval) % BWT_BUFFER_SIZE;
   bwt_buffer_data_t *bufferData = &bwtBuffer->intervals[bufferId];
   ++stats->nBufferCalls;
+  //printf("Comparing %" PRIu64 "-%" PRIu64" with %" PRIu64 "-%" PRIu64 "\n", previousInterval.k, previousInterval.l, bufferData->interval.k, bufferData->interval.l); fflush(stdout);
   if (compareBwtIntervals(&previousInterval, &bufferData->interval)) {
     if (bufferData->nextIntervals[nucleotide].l != 0) {
       ++stats->nBufferCallSucesses;

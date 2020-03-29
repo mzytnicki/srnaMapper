@@ -11,6 +11,8 @@ typedef struct {
   //unsigned long int      nDownPreprocessed;
   unsigned long int      nBufferCalls;
   unsigned long int      nBufferCallSucesses;
+  size_t                 maxHashSize;
+  size_t                 maxHashVectorSize;
   size_t                *maxNStates;
   unsigned long int      nTentativeStateInsertions;
   unsigned long int      nSkippedStateInsertions;
@@ -22,14 +24,18 @@ stats_t *stats;
 void initializeStats () {
   stats->nReads                    = 0;
   stats->nShortReads               = 0;
-  //stats->nDown                     = 0;
-  //stats->nDownPreprocessed         = 0;
   stats->nBufferCalls              = 0;
   stats->nBufferCallSucesses       = 0;
-  stats->maxNStates                = (size_t *) calloc(parameters->maxNErrors, sizeof(size_t));
+  stats->maxHashSize               = 0;
+  stats->maxHashVectorSize         = 0;
+  stats->maxNStates                = (size_t *) calloc(parameters->maxNErrors+1, sizeof(size_t));
   stats->nTentativeStateInsertions = 0;
   stats->nSkippedStateInsertions   = 0;
   memset(stats->nBwtPerDepth, 0, MAX_READ_LENGTH * sizeof(unsigned long long int));
+}
+
+void freeStats () {
+  free(stats->maxNStates);
 }
 
 void printStats () {
@@ -43,7 +49,8 @@ void printStats () {
   }
   printf("\n");
   printf("# buffer call successes %'lu/%'lu (%i%%)\n", stats->nBufferCallSucesses, stats->nBufferCalls, (stats->nBufferCalls == 0)? 0: (int) (round(((double) stats->nBufferCallSucesses) / stats->nBufferCalls * 100)));
-  printf("# state insertion skipped %'lu/%'lu (%i%%)\n", stats->nSkippedStateInsertions, stats->nTentativeStateInsertions, (stats->nTentativeStateInsertions == 0)? 0: (int) (round(((double) stats->nSkippedStateInsertions) / stats->nTentativeStateInsertions * 100)));
+  printf("# max state hash: hash %'lu/%'i, vector: %'lu\n", stats->maxHashSize, N_STATES_HASH_SIZE, stats->maxHashVectorSize);
+  printf("# state insertion skipped: %'lu/%'lu (%i%%)\n", stats->nSkippedStateInsertions, stats->nTentativeStateInsertions, (stats->nTentativeStateInsertions == 0)? 0: (int) (round(((double) stats->nSkippedStateInsertions) / stats->nTentativeStateInsertions * 100)));
   printf("# BWT calls:\n");
   for (size_t i = 0; i < MAX_READ_LENGTH; ++i) {
     if (stats->nBwtPerDepth[i] > 0) {

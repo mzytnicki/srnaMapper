@@ -96,11 +96,11 @@ bool areStatesEqual (state_t *state1, state_t *state2) {
 }
 
 int intervalComp (const bwtinterval_t *i1, const bwtinterval_t *i2) {
-  int i = i1->k - i2->k;
+  int i = i2->k - i1->k;
   if (i != 0) {
     return i;
   }
-  return i1->l - i2->l;
+  return i2->l - i1->l;
 }
 
 int stateComp (const state_t *state1, const state_t *state2) {

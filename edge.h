@@ -65,12 +65,18 @@ unsigned short getEdgeNucleotide (edge_t *edge, sequence_t length) {
   return getNucleotide(edge->sequence, length);
 }
 
+/**
+ * Remove first n nucleotides of an edge
+ */
 void edgeRemoveFirst (edge_t *edge, size_t length) {
   assert(length <= edge->length);
   edge->length -= length;
   edge->sequence >>= (length * NUCLEOTIDES_BITS);
 }
 
+/**
+ * Remove last n nucleotides of an edge
+ */
 void edgeRemoveLast (edge_t *edge, size_t newSize) {
   assert(newSize <= edge->length);
   edge->length = newSize;

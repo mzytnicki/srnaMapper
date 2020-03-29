@@ -72,9 +72,9 @@ int main(int argc, char const ** argv) {
   nReads = 0;
   parameters = &param;
   stats = &stat;
-  initializeStats();
   returnCode = parseCommandLine(argc, argv);
   if (returnCode != EXIT_SUCCESS) return returnCode;
+  initializeStats();
   createTree(&tree);
   for (unsigned int fileId = 0; fileId < parameters->nReadsFiles; ++fileId) {
     printf("Reading reads file %s...\n", parameters->readsFileNames[fileId]);
@@ -119,5 +119,6 @@ int main(int argc, char const ** argv) {
   bwa_idx_destroy(idx);
   puts("... done.");
   printStats();
+  freeStats();
   return 0;
 }

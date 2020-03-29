@@ -16,6 +16,12 @@
 
 #define NO_INFO ((uint32_t) -1)
 
+/**
+ * CellInfo stores informations on compressed tree cells:
+ *  - the id of the cell
+ *  - the quality
+ *  - the counts
+ */
 typedef struct {
   uint32_t      cellId;
   char         *quality;
@@ -52,6 +58,10 @@ void printCellInfo (cellInfo_t *cellInfo) {
   printf("cell id: %" PRIu32 ", qual: %s, counts: %p\n", cellInfo->cellId, cellInfo->quality, cellInfo->counts);
 }
 
+/**
+ * CellInfos store all the cell infos in a vector.
+ * The infos a supposed to be read sequentially, from the first cell to the last (possibly skipping some)...
+ */
 typedef struct {
   size_t nAllocatedCellInfos;
   size_t nCellInfos;
@@ -94,7 +104,11 @@ cellInfo_t *getCellInfo (cellInfos_t *cellInfos, uint32_t cellId) {
   return (cellInfos->currentCellInfo->cellId == cellId)? cellInfos->currentCellInfo: NULL;
 }
 
-
+/**
+ * A cell is:
+ * - the index of the first (child) edge in the tree's vector of edges
+ * - the number of edges
+ */
 typedef struct {
   uint32_t      firstEdge;
   unsigned char nEdges;
@@ -117,10 +131,14 @@ void printCell2(cell2_t *cell) {
 /**
  * A tree is stores all the prefixes of the reads.
  * It is:
+ *   - a vector of edges
+ *   - a vector of cells
  *   - a depth
- *   - the number of cells
- *   - the size of the array
- *   - an instance of the quality structure
+ *   - the number of cells currently used
+ *   - the number of allocated cells
+ *   - the number of edges currently used
+ *   - the number of allocated edges
+ *   - a pointer to the vector of cellInfos
  * The first N_TREE_BASE cells correspond to the all the combinations of TREE_BASE_SIZE-mers.
  * In other words, the 1-mers, 2-mers, ..., TREE_BASE_SIZE-1-mers are not represented.
  */
@@ -229,6 +247,9 @@ void _copyTree (tree2_t *tree2, uint32_t cellId2, const tree_t *tree, uint64_t c
   }
 }
 
+/**
+ * Copy a non-compressed tree to a compressed tree
+ */
 void copyTree (tree2_t *tree2, const tree_t *tree) {
   createTree2(tree2, tree->depth, tree->nCells, tree->nEdges, tree->qualities.nQualities);
   for (uint32_t cellId = 0; cellId < N_TREE_BASE; ++cellId) {

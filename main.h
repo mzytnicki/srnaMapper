@@ -38,7 +38,7 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
   unsigned int nErrors = states->minErrors[depth];
   state_t *theseStates = getState(states, depth, nErrors, 0);
   size_t nStates;
-  simplifyStates(states, depth, nErrors);
+  //simplifyStates(states, depth, nErrors);
   nStates = states->nStates[depth][nErrors];
   //printf("Quality size: %zu vs %zu\n", strlen(quality), depth);
   //printf("Quality: %s (%p)\n", quality, quality);
@@ -89,7 +89,7 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
 /**
  * Map without error
  */
-bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t nErrors) {
+bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t nErrors, bool oneInsertion) {
   assert(depth > 0);
   state_t *previousState;
   //state_t *nextState;
@@ -107,7 +107,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
     //printState(previousState, depth);
     //printStates(states, depth); fflush(stdout);
     ++stats->nBwtPerDepth[depth-1];
-    if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
+    if (goDownBwt(&states->bwtBuffer, previousState, nt, &nextInterval)) {
       mapFound = true;
       //nextState = addState(states, depth, nErrors);
       //setState(nextState, &nextInterval, MATCH, 0, stateId);
@@ -118,6 +118,9 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
     }
   }
   //printf("    found map: %s\n", mapFound ? "true" : "false"); fflush(stdout);
+  if (oneInsertion) {
+    addHashStates(states, depth, nErrors);
+  }
   return mapFound;
 }
 
@@ -163,7 +166,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       ++stats->nBwtPerDepth[depth-1];
       if (nt != path->nucleotides[depth-1]) {
         //addState(states, depth-1, nErrors, &newState);
-        if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
+        if (goDownBwt(&states->bwtBuffer, previousState, nt, &nextInterval)) {
           //printState(newState, path->maxDepth);
           //nextState = addState(states, depth, nErrors);
           //setState(nextState, &nextInterval, MISMATCH, nt, stateId);
@@ -180,7 +183,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       //goDownBwt4Nt(states->bwtBuffer, previousState, nextIntervals);
       for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
         ++stats->nBwtPerDepth[depth];
-        if (goDownBwt(states->bwtBuffer, previousState, nt, &nextInterval)) {
+        if (goDownBwt(&states->bwtBuffer, previousState, nt, &nextInterval)) {
           //nextState = addState(states, depth, nErrors);
           //setState(nextState, &nextInterval, DELETION, nt, stateId);
           addState(states, depth, nErrors, &nextInterval, DELETION, nt, stateId, false);
@@ -189,7 +192,8 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       }
     }
   }
-  if (mapWithoutError(states, depth, path->nucleotides[depth-1], nErrors)) {
+  // add match
+  if (mapWithoutError(states, depth, path->nucleotides[depth-1], nErrors, false)) {
     stateAdded = true;
   }
   //TODO adapth this
@@ -199,6 +203,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
   }
   */
   //states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
+  addHashStates(states, depth, nErrors);
   return stateAdded;
 }
 
@@ -212,10 +217,10 @@ bool addError (states_t *states, path_t *path) {
   bool stateAdded = false;
   // Find the first place where the mappings with nErrors are computed
   for (firstDepth = path->depth; (firstDepth > 1) && (! firstDepthFound); --firstDepth) {
-    for (size_t nucleotide = 0; (nucleotide < N_NUCLEOTIDES) && (! firstDepthFound); ++nucleotide) {
+    //for (size_t nucleotide = 0; (nucleotide < N_NUCLEOTIDES) && (! firstDepthFound); ++nucleotide) {
       firstDepthFound = (states->nStates[firstDepth][nErrors] > 0);
       //if (firstDepthFound) printf("Found first depth at depth = %zu, # errors = %zu, nucleotide = %zu\n", firstDepth, nErrors, nucleotide);
-    }
+    //}
   }
   if (firstDepthFound) firstDepth += 2;
   //printf("  adding error with %zu @ %zu from %zu\n", nErrors, path->depth, firstDepth);
@@ -234,7 +239,7 @@ bool addError (states_t *states, path_t *path) {
 void mapWithErrors (states_t *states, path_t *path) {
   assert(path->depth <= TREE_BASE_SIZE);
   assert(path->depth > 0);
-  mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1]);
+  mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1], false);
   //TODO: Optimize this
   for (unsigned int nErrors = 1; nErrors <= parameters->maxNErrors; ++nErrors) {
     _addError(states, path, nErrors, path->depth);
@@ -243,11 +248,13 @@ void mapWithErrors (states_t *states, path_t *path) {
   //printStates(states, path->depth-1);
   //printPath(path); fflush(stdout);
   //TODO check this
+  /*
   if (path->depth == TREE_BASE_SIZE) {
     for (size_t nErrors = states->minErrors[TREE_BASE_SIZE]; nErrors <= states->maxErrors[TREE_BASE_SIZE]; ++nErrors) {
       simplifyStates(states, TREE_BASE_SIZE, nErrors);
     }
   }
+  */
 }
 
 bool shortCutCondition (const states_t *states, const tree2_t *tree, const path_t *path) {
@@ -460,7 +467,7 @@ bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, outputSam_t *
   //TODO store all the best paths instead
   for (unsigned int nErrors = states->minErrors[previousDepth]; (nErrors <= states->maxErrors[previousDepth]) && (nErrors <= bestNErrors); ++nErrors) {
     //printf("      Trying with %u errors\n", nErrors);
-    simplifyStates(states, previousDepth, nErrors);
+    //simplifyStates(states, previousDepth, nErrors);
     //printf("    Step1.1: %" PRIu64 "\n", cellId);
     for (unsigned int stateId = 0; stateId < states->nStates[previousDepth][nErrors]; ++stateId) {
       //printf("      Trying with state #%u/%zu %p\n", stateId, states->nStates[previousDepth][nErrors], &states->nStates[previousDepth][nErrors]);
@@ -660,7 +667,7 @@ bool findBestMapping (states_t *states, path_t *path) {
     return true;
   }
   */
-  if (mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1])) {
+  if (mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1], true)) {
     //printf("    ... without error\n");
     return true;
   }

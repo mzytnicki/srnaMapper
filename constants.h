@@ -72,8 +72,12 @@
 // Should not do this, but whatever... Not really used...
 #define MAX_READ_LENGTH 500
 
-#define BWT_BUFFER_SIZE 0x1000
+#define BWT_BUFFER_SIZE 0x20000
 #define BWT_BUFFER_MASK (BWT_BUFFER_SIZE-1)
+
+#define N_STATES_HASH_SIZE   0x10000
+#define N_STATES_VECTOR_SIZE 0x1000
+
 
 typedef uint32_t count_t;
 
