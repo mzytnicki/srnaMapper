@@ -22,15 +22,15 @@ typedef struct {
 
 void createOutputSam (outputSam_t *outputSam, unsigned int size) {
   outputSam->isBackwardSet    = false;
-  outputSam->qname            = (char *) malloc(MAX_QNAME_SIZE * sizeof(char));
-  outputSam->backtraceCigar   = (char *) malloc(MAX_CIGAR_SIZE * sizeof(char));
+  outputSam->qname            = (char *)          malloc(MAX_QNAME_SIZE * sizeof(char));
+  outputSam->backtraceCigar   = (char *)          malloc(MAX_CIGAR_SIZE * sizeof(char));
   outputSam->backtraceLengths = (unsigned char *) malloc(MAX_CIGAR_SIZE * sizeof(unsigned char));
-  outputSam->forwardCigar     = (char *) malloc(MAX_CIGAR_SIZE * sizeof(char));
-  outputSam->backwardCigar    = (char *) malloc(MAX_CIGAR_SIZE * sizeof(char));
-  outputSam->forwardSeq       = (char *) malloc((size+1) * sizeof(char));
-  outputSam->backwardSeq      = (char *) malloc((size+1) * sizeof(char));
-  outputSam->forwardQual      = (char *) malloc((size+1) * sizeof(char));
-  outputSam->backwardQual     = (char *) malloc((size+1) * sizeof(char));
+  outputSam->forwardCigar     = (char *)          malloc(MAX_CIGAR_SIZE * sizeof(char));
+  outputSam->backwardCigar    = (char *)          malloc(MAX_CIGAR_SIZE * sizeof(char));
+  outputSam->forwardSeq       = (char *)          malloc((size+1)       * sizeof(char));
+  outputSam->backwardSeq      = (char *)          malloc((size+1)       * sizeof(char));
+  outputSam->forwardQual      = (char *)          malloc((size+1)       * sizeof(char));
+  outputSam->backwardQual     = (char *)          malloc((size+1)       * sizeof(char));
 }
 
 void computeCigar (outputSam_t *outputSam) {

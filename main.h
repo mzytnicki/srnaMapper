@@ -409,7 +409,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
 }
 */
 
-bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, outputSam_t *outputSam) {
+bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *cellVisitor, outputSam_t *outputSam) {
   //printf("    Entering tryShortCuts will cell %" PRIu32 " at depth %zu, last nt %i, and read pos %zu, edge len: %zu\n", path->cellIds[path->nCells], path->depth, path->nucleotides[path->depth-1], path->readPos, path->edgeLength);
   //printPath(path);
   unsigned int maxNAlignments = tree->depth + parameters->maxNErrors + 1;
@@ -566,7 +566,7 @@ bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, outputSam_t *
   assert(currentNErrors == bestNErrors);
   //printStates(states, path->depth+1);
   //printPath(path);
-  cellInfo = getCellInfoTree(tree, cellId);
+  cellInfo = getCellInfoTree(cellId, cellVisitor);
   assert(cellInfo != NULL);
   writeQname(outputSam, cellInfo->counts);
   memcpy(outputSam->forwardSeq,  path->read + path->readPos,  (path->depth+1) * sizeof(char));
@@ -683,7 +683,7 @@ bool findBestMapping (states_t *states, path_t *path) {
 /**
  * Do the mapping
  */
-void _map (tree2_t *tree, states_t *states, path_t *path, outputSam_t *outputSam) {
+void _map (tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *cellVisitor, uint32_t firstCellId, uint32_t lastCellId, outputSam_t *outputSam) {
   bool mappable = true;
   cellInfo_t *cellInfo;
   while (true) {
@@ -693,20 +693,20 @@ void _map (tree2_t *tree, states_t *states, path_t *path, outputSam_t *outputSam
     //printf("\n");
     if ((mappable) && (shortCutCondition(states, tree, path))) {
       //printf("Short cut with positive exit\n"); fflush(stdout);
-      tryShortCuts2(tree, states, path, outputSam);
+      tryShortCuts2(tree, states, path, cellVisitor, outputSam);
       mappable = false;
     }
     else {
       // advance in the tree
       //printf("Going to next tree\n");
-      if (! goNextTree2(tree, states, path, mappable)) {
+      if (! goNextTree2(tree, states, path, firstCellId, lastCellId, mappable)) {
         return;
       }
       // prefix of the read is not mappable
       mappable = findBestMapping(states, path);
       //printf("\tRead is mappable: %s\n", (mappable)? "yes": "no");
       if ((path->depth >= TREE_BASE_SIZE) && (mappable) && (path->edgeLength == 0)) {
-        if ((cellInfo = getCellInfoTree(tree, path->cellIds[path->nCells])) != NULL) {
+        if ((cellInfo = getCellInfoTree(path->cellIds[path->nCells], cellVisitor)) != NULL) {
           printRead(states, path, cellInfo, outputSam);
         }
       }
@@ -717,15 +717,19 @@ void _map (tree2_t *tree, states_t *states, path_t *path, outputSam_t *outputSam
 /**
  * Allocate/free structures before/after mapping
  */
+/*
 void map (tree2_t *tree, outputSam_t *outputSam) {
   states_t *states = initializeStates(tree->depth);
   path_t   *path   = initializePath(tree->depth);
+  cellVisitor_t cellVisitor;
+  createCellVisotor (&cellVisitor, &tree->cellInfos);
   //printf("depth: %zu\n", tree->depth);
   //addState(&states, 0, 0, firstState);
   //goDownTree(tree, &path);
-  _map(tree, states, path, outputSam);
+  _map(tree, states, path, &cellVisitor, outputSam);
   freeStates(states);
   freePath(path);
 }
+*/
 
 #endif

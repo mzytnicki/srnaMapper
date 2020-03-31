@@ -91,7 +91,7 @@ state_t *_addStateToHash (states_hash_t *statesHash, size_t hashValue, bwtinterv
   setState(state, interval, trace, nucleotide, previousState);
   statesHash->idUsed[statesHash->nHashUsed] = hashValue;
   ++statesHash->nHashUsed;
-  stats->maxHashSize = MAX(stats->maxHashSize, statesHash->nHashUsed);
+  //stats->maxHashSize = MAX(stats->maxHashSize, statesHash->nHashUsed);
   return state;
 }
 

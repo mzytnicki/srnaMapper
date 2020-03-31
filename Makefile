@@ -33,7 +33,7 @@ srnaCollapser: srnaCollapser.c
 
 srnaMapper: srnaMapper.c $(BWA_O)
 	$(CC) $(OFLAGS) -Wall -Wextra -o srnaMapper.o -c srnaMapper.c
-	$(CC) $(OFLAGS) -Wall -Wextra -o srnaMapper srnaMapper.o $(BWA_O) -lm -lz -lpthread -lrt
+	$(CC) $(OFLAGS) -Wall -Wextra -o srnaMapper srnaMapper.o $(BWA_O) -lm -lz -pthread -lrt
 
 
 srnaBuilder: srnaBuilder.cpp

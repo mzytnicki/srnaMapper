@@ -195,10 +195,29 @@ bool goDownTree2 (const tree2_t *tree, path_t *path) {
   return goDownTree2NotBase(tree, path);
 }
 
+bool isBeforeLastCellId (path_t *path, uint32_t lastCellId) {
+  /*
+  if (path->cellIds[path->nCells] > (lastCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells)))) {
+    printf("Depth: %zu, cell: %" PRIu32 ", last cell: %" PRIu32 ", computed: %" PRIu32 ", sequence: ", path->nCells, path->cellIds[path->nCells], lastCellId, lastCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells)));
+    printSequence(lastCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells)), path->nCells);
+    printf("\n");
+    fflush(stdout);
+  }
+  */
+  if (path->depth == 0) {
+    return true;
+  }
+  if (path->depth > TREE_BASE_SIZE) {
+    return true;
+  }
+  return (path->cellIds[path->nCells] <= (lastCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells))));
+}
+
+
 /**
  * Step into the last cells of the tree in a BFS fashion.
  */
-bool goRightTreeBase (path_t *path) {
+bool goRightTreeBase (path_t *path, uint32_t lastCellId) {
   //uint64_t cellId = path->cellIds[path->nCells], nextCellId = cellId + 1, mask = NUCLEOTIDE_MASK;
   unsigned short newNucleotide = 0;
   assert(path->depth <= TREE_BASE_SIZE);
@@ -222,13 +241,13 @@ bool goRightTreeBase (path_t *path) {
   path->cellIds[path->nCells] = path->cellIds[path->nCells] + 1;
   //printf("      Leaving base will cell %" PRIu32 ", nucleotide %c, read %s\n", path->cellIds[path->nCells], "ACGT"[newNucleotide], path->read + path->readPos);
   path->edgeLength = 0;
-  return true;
+  return isBeforeLastCellId(path, lastCellId);
 }
 
 /**
  * Step into the first cells of the tree in a BFS fashion.
  */
-bool goRightTree2NotBase (const tree2_t *tree, path_t *path) {
+bool goRightTree2NotBase (const tree2_t *tree, path_t *path, uint64_t lastCellId) {
   assert(path->depth <= path->maxDepth);
   assert(path->nCells <= path->maxDepth);
   edge_t *edge;
@@ -237,7 +256,7 @@ bool goRightTree2NotBase (const tree2_t *tree, path_t *path) {
   while (true) {
     if (path->depth <= TREE_BASE_SIZE) {
       ++path->nCells;
-      return goRightTreeBase(path);
+      return goRightTreeBase(path, lastCellId);
     }
     //printf("    ... trying depth %zu, # cell %zu, edge len %zu\n", path->depth, path->nCells, path->edgeLength);
     assert(path->depth >= path->edgeLength);
@@ -293,20 +312,49 @@ bool goRightTree2NotBase (const tree2_t *tree, path_t *path) {
  * Step into the tree in a BFS fashion.
  * Return false if search is exhausted.
  */
-bool goRightTree2 (const tree2_t *tree, path_t *path) {
+bool goRightTree2 (const tree2_t *tree, path_t *path, uint32_t lastCellId) {
   //printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
   //printPath(path);
   unsetShortCut(path->shortCut);
   if (path->depth > TREE_BASE_SIZE) {
-    return goRightTree2NotBase(tree, path);
+    return goRightTree2NotBase(tree, path, lastCellId);
   }
-  return goRightTreeBase(path);
+  return goRightTreeBase(path, lastCellId);
+}
+
+bool isAfterFirstCellId (path_t *path, uint32_t firstCellId) {
+  /*
+  if ((firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells))) > path->cellIds[path->nCells]) {
+    printf("Depth: %zu, cell: %" PRIu32 ", 1st cell: %" PRIu32 ", computed: %" PRIu32 ", target sequence: ", path->nCells, path->cellIds[path->depth], firstCellId, firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells)));
+    printSequence(firstCellId, TREE_BASE_SIZE);
+    printf(", current sequence: ");
+    printSequence(firstCellId, path->nCells);
+    printf(", computed sequence: ");
+    printSequence(firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells)), path->nCells);
+    printf("\n");
+    fflush(stdout);
+  }
+  */
+  if (path->depth == 0) {
+    return true;
+  }
+  if (path->depth > TREE_BASE_SIZE) {
+    return true;
+  }
+  return ((firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells))) <= path->cellIds[path->nCells]);
 }
 
 /**
  * Go to next child node in reads tree.  If none, go to sibling
  */
-bool goNextTree2 (const tree2_t *tree, states_t *states, path_t *path, bool mappable) {
+bool goNextTree2 (const tree2_t *tree, states_t *states, path_t *path, uint32_t firstCellId, uint32_t lastCellId, bool mappable) {
+  // First make sure that we are not before the first cell
+  while (! isAfterFirstCellId(path, firstCellId)) {
+    assert(path->nCells > 0);
+    if (! goRightTree2(tree, path, lastCellId)) {
+      return false;
+    }
+  }
   //printf("  Goto next\n");
   if (mappable) {
     //printf("    Mappable\n");
@@ -317,7 +365,7 @@ bool goNextTree2 (const tree2_t *tree, states_t *states, path_t *path, bool mapp
   //printf("  Going right\n");
   //printStates(states, path->depth);
   //printPath(path);
-  if (! goRightTree2(tree, path)) {
+  if (! goRightTree2(tree, path, lastCellId)) {
     return false;
   }
   //printf("  Now\n");

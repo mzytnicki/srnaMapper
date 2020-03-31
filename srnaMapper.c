@@ -58,6 +58,7 @@
 #include "shortcut.h"
 #include "path.h"
 #include "main.h"
+#include "thread.h"
 
 
 
@@ -67,7 +68,7 @@ int main(int argc, char const ** argv) {
   stats_t stat;
   tree_t tree;
   tree2_t tree2;
-  outputSam_t outputSam;
+  //outputSam_t outputSam;
   bwaidx_t *idx = NULL;
   nReads = 0;
   parameters = &param;
@@ -109,16 +110,18 @@ int main(int argc, char const ** argv) {
   if (outputSamFile == NULL) {
     printf("Error!  Cannot write to output SAM file '%s'.\nExiting.\n", param.outputSamFileName);
   }
-  outputSam.file = outputSamFile;
-  createOutputSam(&outputSam, tree2.depth);
-  map(&tree2, &outputSam);
+  //outputSam.file = outputSamFile;
+  //createOutputSam(&outputSam, tree2.depth);
+  //map(&tree2, &outputSam);
+  startThreads(&tree2, outputSamFile);
   fclose(outputSamFile);
   freeTree2(&tree2);
-  freeOutputSam(&outputSam);
+  //freeOutputSam(&outputSam);
   freeParameters(parameters);
   bwa_idx_destroy(idx);
   puts("... done.");
   printStats();
   freeStats();
-  return 0;
+  pthread_exit(NULL);
+  //return 0;
 }

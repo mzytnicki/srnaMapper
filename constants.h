@@ -10,6 +10,7 @@
 #include <string.h>
 #include <inttypes.h>
 #include <locale.h>
+#include <pthread.h>
 
 #include "Libs/bwa/bwt.h"
 #include "Libs/bwa/bwa.h"

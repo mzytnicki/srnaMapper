@@ -32,7 +32,7 @@ void createEmptyCellInfo (cellInfo_t *cellInfo) {
   cellInfo->cellId = NO_INFO;
 }
 
-bool isEmptyCellInfo (cellInfo_t *cellInfo) {
+bool isEmptyCellInfo (const cellInfo_t *cellInfo) {
   return (cellInfo->cellId == NO_INFO);
 }
 
@@ -66,8 +66,15 @@ typedef struct {
   size_t nAllocatedCellInfos;
   size_t nCellInfos;
   cellInfo_t *cellInfos;
-  cellInfo_t *currentCellInfo;
 } cellInfos_t;
+
+typedef struct {
+  cellInfo_t *currentCellInfo;
+} cellVisitor_t;
+
+void createCellVisotor (cellVisitor_t *cellVisitor, cellInfos_t *cellInfos) {
+  cellVisitor->currentCellInfo = cellInfos->cellInfos;
+}
 
 void createCellInfos (cellInfos_t *cellInfos, size_t nInfos, size_t readSize, size_t nSamples) {
   cellInfos->nAllocatedCellInfos = nInfos;
@@ -77,7 +84,6 @@ void createCellInfos (cellInfos_t *cellInfos, size_t nInfos, size_t readSize, si
     createCellInfo(&cellInfos->cellInfos[i], readSize, nSamples);
   }
   createEmptyCellInfo(&cellInfos->cellInfos[nInfos]);
-  cellInfos->currentCellInfo = cellInfos->cellInfos;
 }
 
 void freeCellInfos (cellInfos_t *cellInfos) {
@@ -94,14 +100,14 @@ void addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t
   ++cellInfos->nCellInfos;
 }
 
-cellInfo_t *getCellInfo (cellInfos_t *cellInfos, uint32_t cellId) {
+cellInfo_t *getCellInfo (uint32_t cellId, cellVisitor_t *cellVisitor) {
   //printf("Looking for cell info %" PRIu32 "\n", cellId); fflush(stdout);
   //printf("Current state is %p %" PRIu32 "\n", cellInfos->currentCellInfo, cellInfos->currentCellInfo->cellId); fflush(stdout);
   //printf("Current state is %p\n", cellInfos->cellInfos + cellInfos->nCellInfos); fflush(stdout);
-  for (; (! isEmptyCellInfo(cellInfos->currentCellInfo)) && (cellInfos->currentCellInfo->cellId < cellId); ++cellInfos->currentCellInfo) {
+  for (; (! isEmptyCellInfo(cellVisitor->currentCellInfo)) && (cellVisitor->currentCellInfo->cellId < cellId); ++cellVisitor->currentCellInfo) {
     //printf("Got %" PRIu32 "\n", cellInfos->currentCellInfo->cellId); fflush(stdout);
   }
-  return (cellInfos->currentCellInfo->cellId == cellId)? cellInfos->currentCellInfo: NULL;
+  return (cellVisitor->currentCellInfo->cellId == cellId)? cellVisitor->currentCellInfo: NULL;
 }
 
 /**
@@ -114,15 +120,15 @@ typedef struct {
   unsigned char nEdges;
 } cell2_t;
 
-unsigned char getNChildren2 (cell2_t *cell) {
+unsigned char getNChildren2 (const cell2_t *cell) {
   return cell->nEdges;
 }
 
-bool isTerminal (cell2_t *cell) {
+bool isTerminal (const cell2_t *cell) {
   return (cell->nEdges == 0);
 }
 
-void printCell2(cell2_t *cell) {
+void printCell2 (const cell2_t *cell) {
   printf("(%p) %" PRIu32 "/%u", cell, cell->firstEdge, cell->nEdges);
 }
 
@@ -261,8 +267,8 @@ void copyTree (tree2_t *tree2, const tree_t *tree) {
   }
 }
 
-cellInfo_t *getCellInfoTree (tree2_t *tree, uint32_t cellId) {
-  return getCellInfo(&tree->cellInfos, cellId);
+cellInfo_t *getCellInfoTree (uint32_t cellId, cellVisitor_t *cellVisitor) {
+  return getCellInfo(cellId, cellVisitor);
 }
 
 
