@@ -410,7 +410,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
 }
 */
 
-bool tryShortCuts2 (tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *cellVisitor, outputSam_t *outputSam) {
+bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *cellVisitor, outputSam_t *outputSam) {
   //printf("    Entering tryShortCuts will cell %" PRIu32 " at depth %zu, last nt %i, and read pos %zu, edge len: %zu\n", path->cellIds[path->nCells], path->depth, path->nucleotides[path->depth-1], path->readPos, path->edgeLength);
   //printPath(path);
   unsigned int maxNAlignments = tree->depth + parameters->maxNErrors + 1;
@@ -684,7 +684,7 @@ bool findBestMapping (states_t *states, path_t *path) {
 /**
  * Do the mapping
  */
-void _map (tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *cellVisitor, uint32_t firstCellId, uint32_t lastCellId, outputSam_t *outputSam) {
+void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *cellVisitor, uint32_t firstCellId, uint32_t lastCellId, outputSam_t *outputSam) {
   bool mappable = true;
   cellInfo_t *cellInfo;
   while (true) {
