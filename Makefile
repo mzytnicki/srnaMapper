@@ -1,6 +1,5 @@
 CC=gcc
 CPPC=g++
-CFLAGS=-Wall -Wextra $(OFLAGS) -pthread
 LFLAGS=-lrt
 ifdef DEBUG
 	OFLAGS=-O0 -march=native -g
@@ -13,6 +12,8 @@ else ifdef VTUNE
 else
 	OFLAGS=-O3 -DNDEBUG -march=native -g -msse2 -mavx
 endif
+CFLAGS=-Wall -Wextra $(OFLAGS) -std=c11 -D_GNU_SOURCE
+FFLAGS=-lm -lz -pthread -lrt
 ifdef ICC
 	CC=icc
 endif
@@ -32,8 +33,8 @@ srnaCollapser: srnaCollapser.c
 	$(CC) $(OFLAGS) -Wall -Wextra -o srnaCollapser srnaCollapser.c
 
 srnaMapper: srnaMapper.c $(BWA_O)
-	$(CC) $(OFLAGS) -Wall -Wextra -o srnaMapper.o -c srnaMapper.c
-	$(CC) $(OFLAGS) -Wall -Wextra -o srnaMapper srnaMapper.o $(BWA_O) -lm -lz -pthread -lrt
+	$(CC) $(CFLAGS) -Wall -Wextra -o srnaMapper.o -c srnaMapper.c
+	$(CC) $(CFLAGS) -Wall -Wextra -o srnaMapper srnaMapper.o $(BWA_O) $(FFLAGS)
 
 
 srnaBuilder: srnaBuilder.cpp

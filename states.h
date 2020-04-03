@@ -50,6 +50,7 @@ typedef struct {
 } states_hash_t;
 
 void initializeStatesHash (states_hash_t *statesHash) {
+  /*
   statesHash->statesHash             = (state_t *) malloc(N_STATES_HASH_SIZE * sizeof(state_t));
   statesHash->idUsed                 = (size_t *)   malloc(N_STATES_HASH_SIZE * sizeof(size_t));
   statesHash->nHashUsed              = 0;
@@ -57,13 +58,16 @@ void initializeStatesHash (states_hash_t *statesHash) {
   statesHash->nStatesVectorAllocated = N_STATES_VECTOR_SIZE;
   statesHash->nStatesVectorUsed      = 0;
   initializeBitArray(&statesHash->isUsed, N_STATES_HASH_SIZE);
+  */
 }
 
 void freeStatesHash (states_hash_t *statesHash) {
+  /*
   free(statesHash->statesHash);
   free(statesHash->idUsed);
   free(statesHash->statesVector);
   freeBitArray(&statesHash->isUsed);
+  */
 }
 
 state_t *addStateToHashVector (states_hash_t *statesHash, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
@@ -182,7 +186,7 @@ state_t *getState(const states_t *states, size_t depth, size_t nErrors, size_t i
  * Update counts and allocate arrays to receive new states
  */
 void updateCounts (states_t *states, size_t depth, size_t nErrors, size_t nStates) {
-  //printf("Entering update counts with depth %zu, %zu errors, and %zu states\n", depth, nErrors, nStates); fflush(stdout);
+  //printf("Entering update counts with states %p depth %zu, %zu errors, and %zu states, errors [%zu-%zu/%lu]\n", states, depth, nErrors, nStates, states->minErrors[depth], states->maxErrors[depth], SIZE_MAX); fflush(stdout);
   assert(depth <= states->depth);
   size_t nStatesPerError;
   if (states->nStates[depth][nErrors] == 0) {
@@ -206,7 +210,7 @@ void updateCounts (states_t *states, size_t depth, size_t nErrors, size_t nState
   states->nStates[depth][nErrors]   += nStates;
   states->nStatesPerPosition[depth] += nStates;
   nStatesPerError = states->firstState[depth][nErrors] + states->nStates[depth][nErrors];
-  stats->maxNStates[nErrors] = MAX(stats->maxNStates[nErrors], nStatesPerError);
+  //stats->maxNStates[nErrors] = MAX(stats->maxNStates[nErrors], nStatesPerError);
   if (nStatesPerError >= states->allocatedNStates[nErrors]-1) {
     while (nStatesPerError >= states->allocatedNStates[nErrors]-1) {
       states->allocatedNStates[nErrors] *= 2;
@@ -293,15 +297,63 @@ state_t *_addState (states_t *states, size_t depth, size_t nErrors, bwtinterval_
   updateCounts(states, depth, nErrors, 1);
   state = &states->states[nErrors][states->firstState[depth][nErrors] + states->nStates[depth][nErrors] - 1];
   setState(state, interval, trace, nucleotide, previousState);
+  //printf("Inserted interval %" PRIu64 "-%" PRIu64 " at %zu, %zu (%c/%c), with %zu elements\n", interval->k, interval->l, depth, nErrors, CIGAR[trace], "ACGT"[nucleotide], states->nStates[depth][nErrors]); fflush(stdout);
+  //printStates(states, depth); fflush(stdout);
   return state;
 }
 
+void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
+  return;
+  assert(depth < states->depth);
+  assert(nErrors <= states->maxErrors[depth]);
+  size_t previousNStates = states->nStates[depth][nErrors];
+  size_t nextNStates = 0;
+  state_t *theseStates = states->states[nErrors] + states->firstState[depth][nErrors];
+  if (previousNStates <= 1) {
+    return;
+  }
+  //TODO check that the pointers are good!
+  //printf("\t\t\t\tSimplify states from %zu ", nStates);
+  //printf("Entering Simplify States @ depth %zu with %zu errors and %zu elements.\n", depth, nErrors, previousNStates); fflush(stdout);
+  qsort(theseStates, previousNStates, sizeof(state_t), sortCompareStates);
+  for (size_t secondStateId = 1; secondStateId < previousNStates; ++secondStateId) {
+    //printf("\tCurrent state: %zu/%zu/%zu\n", nextNStates, secondStateId, previousNStates); fflush(stdout);
+    if (! areStatesEqual(&theseStates[nextNStates], &theseStates[secondStateId])) {
+    //if (! canMerge(&states[firstStateId], &states[secondStateId])) {
+      ++nextNStates;
+      if (nextNStates < secondStateId) {
+        theseStates[nextNStates] = theseStates[secondStateId];
+      }
+      assert(nextNStates <= previousNStates);
+      assert(nextNStates <= secondStateId);
+      assert(secondStateId < N_STATES);
+    }
+  }
+  ++nextNStates;
+  //printf("to %zu\n", firstStateId+1);
+  states->nStates[depth][nErrors] = nextNStates;
+  assert(states->nStatesPerPosition[depth] >= previousNStates - nextNStates);
+  states->nStatesPerPosition[depth] -= previousNStates - nextNStates;
+}
+
 state_t *addState (states_t *states, size_t depth, size_t nErrors, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState, bool directAdd) {
+  directAdd = true;
   ++stats->nTentativeStateInsertions;
   if (directAdd) {
     return _addState(states, depth, nErrors, interval, trace, nucleotide, previousState);
   }
   return addStateToHash(&states->statesHash, interval, trace, nucleotide, previousState);
+}
+
+void clearStates (states_t *states) {
+  for (size_t depth = 0; depth < states->depth; ++depth) {
+    memset(states->firstState[depth], 0, (parameters->maxNErrors+1) * sizeof(size_t));
+    memset(states->nStates[depth],    0, (parameters->maxNErrors+1) * sizeof(size_t));
+    states->minErrors[depth] = SIZE_MAX;
+    states->maxErrors[depth] = SIZE_MAX;
+  }
+  bwtinterval_t interval = {0, bwt->seq_len};
+  addState(states, 0, 0, &interval, 0, 0, 0, true);
 }
 
 states_t *initializeStates(size_t treeSize) {
@@ -316,10 +368,8 @@ states_t *initializeStates(size_t treeSize) {
   states->maxErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
   states->sw                 = (sw_t *)         malloc(sizeof(sw_t));
   for (size_t depth = 0; depth < states->depth; ++depth) {
-    states->firstState[depth] = (size_t *) calloc((parameters->maxNErrors+1), sizeof(size_t));
-    states->nStates[depth]    = (size_t *) calloc((parameters->maxNErrors+1), sizeof(size_t));
-    states->minErrors[depth] = SIZE_MAX;
-    states->maxErrors[depth] = SIZE_MAX;
+    states->firstState[depth] = (size_t *) malloc((parameters->maxNErrors+1) * sizeof(size_t));
+    states->nStates[depth]    = (size_t *) malloc((parameters->maxNErrors+1) * sizeof(size_t));
   }
   states->allocatedNStates[0] = treeSize + 3;
   states->states[0] = (state_t *) malloc(states->allocatedNStates[0] * sizeof(state_t));
@@ -335,10 +385,9 @@ states_t *initializeStates(size_t treeSize) {
       exit(EXIT_FAILURE);
     }
   }
-  bwtinterval_t interval = {0, bwt->seq_len};
-  addState(states, 0, 0, &interval, 0, 0, 0, true);
+  clearStates(states);
   createSW(states->sw, states->depth);
-  createBwtBuffer(&states->bwtBuffer);
+  //createBwtBuffer(&states->bwtBuffer);
   initializeStatesHash(&states->statesHash);
   return states;
 }

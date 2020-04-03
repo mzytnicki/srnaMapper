@@ -55,21 +55,25 @@ void printPath (path_t *path) {
   printf("\n(depth: %zu, # cells: %zu, read pos: %zu, cellId: %" PRIu32 ", edge length: %zu)\n", path->depth, path->nCells, path->readPos, path->cellIds[path->nCells], path->edgeLength); fflush(stdout);
 }
 
+void clearPath (path_t *path) {
+  path->nCells         = 0;
+  path->depth          = 0;
+  path->edgeLength     = 0;
+  path->readPos        = path->maxDepth;
+}
+
 path_t *initializePath (size_t maxDepth) {
   path_t *path         = (path_t *)         malloc(sizeof(path_t));
   path->nucleotides    = (unsigned short *) malloc(maxDepth * sizeof(unsigned short));
   path->children       = (unsigned short *) malloc(maxDepth * sizeof(unsigned short));
   path->cellIds        = (uint32_t *)       malloc((maxDepth+1) * sizeof(uint32_t));
   path->edges          = (edge_t *)         malloc((maxDepth+1) * sizeof(edge_t));
-  path->nCells         = 0;
   path->read           = (char *)           malloc((maxDepth+1) * sizeof(char));
   path->maxDepth       = maxDepth;
-  path->depth          = 0;
-  path->edgeLength     = 0;
   path->cellIds[0]     = 0;
   path->read[maxDepth] = 0;
-  path->readPos        = maxDepth;
   path->shortCut       = initializeShortCut();
+  clearPath(path);
   return path;
 }
 
@@ -349,6 +353,8 @@ bool isAfterFirstCellId (path_t *path, uint32_t firstCellId) {
  */
 bool goNextTree2 (const tree2_t *tree, states_t *states, path_t *path, uint32_t firstCellId, uint32_t lastCellId, bool mappable) {
   // First make sure that we are not before the first cell
+  //printf("cell id %" PRIu32 "\n", path->cellIds[path->nCells]); fflush(stdout);
+  //printf("Entering goNextTree2 with states %p, path %p, depth %zu, ncells %zu, cell id %" PRIu32 ", interval [%" PRIu32 "-%" PRIu32 "]\n", states, path, path->depth, path->nCells, path->cellIds[path->nCells], firstCellId, lastCellId); fflush(stdout);
   while (! isAfterFirstCellId(path, firstCellId)) {
     assert(path->nCells > 0);
     if (! goRightTree2(tree, path, lastCellId)) {

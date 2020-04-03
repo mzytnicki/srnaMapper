@@ -72,7 +72,7 @@ typedef struct {
   cellInfo_t *currentCellInfo;
 } cellVisitor_t;
 
-void createCellVisotor (cellVisitor_t *cellVisitor, cellInfos_t *cellInfos) {
+void clearCellVisitor (cellVisitor_t *cellVisitor, cellInfos_t *cellInfos) {
   cellVisitor->currentCellInfo = cellInfos->cellInfos;
 }
 

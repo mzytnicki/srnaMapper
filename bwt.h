@@ -36,9 +36,10 @@ typedef struct {
 } bwt_buffer_data_t;
 
 typedef struct {
-  bwt_buffer_data_t intervals[BWT_BUFFER_SIZE];
+  // bwt_buffer_data_t intervals[BWT_BUFFER_SIZE];
 } bwt_buffer_t;
 
+/*
 void createBwtBuffer (bwt_buffer_t *bwtBuffer) {
   for (size_t bufferId = 0; bufferId < BWT_BUFFER_SIZE; ++bufferId) {
     bwtBuffer->intervals[bufferId].interval.k = 0;
@@ -49,6 +50,7 @@ void createBwtBuffer (bwt_buffer_t *bwtBuffer) {
     }
   }
 }
+*/
 
 size_t getBwtHash (bwtinterval_t interval) {
   //TODO: Compute a "good" hash function here
@@ -56,6 +58,7 @@ size_t getBwtHash (bwtinterval_t interval) {
   return (interval.k + interval.l);
 }
 
+/*
 void addToBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide, bwtinterval_t nextInterval) {
   size_t bufferId = getBwtHash(previousInterval) % BWT_BUFFER_SIZE;
   bwt_buffer_data_t *bufferData = &bwtBuffer->intervals[bufferId];
@@ -67,7 +70,9 @@ void addToBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, un
   }
   bufferData->nextIntervals[nucleotide] = nextInterval;
 }
+*/
 
+/*
 bwtinterval_t *findInBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousInterval, unsigned short nucleotide) {
   size_t bufferId = getBwtHash(previousInterval) % BWT_BUFFER_SIZE;
   bwt_buffer_data_t *bufferData = &bwtBuffer->intervals[bufferId];
@@ -82,6 +87,7 @@ bwtinterval_t *findInBwtBuffer (bwt_buffer_t *bwtBuffer, bwtinterval_t previousI
   }
   return NULL;
 }
+*/
 
 /*
 bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short nucleotide, bwtinterval_t *newInterval) {
@@ -103,17 +109,19 @@ bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short 
 */
 
 bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short nucleotide, bwtinterval_t *newInterval) {
+  /*
   bwtinterval_t *bufferedInterval = findInBwtBuffer(bwtBuffer, previousState->interval, nucleotide);
   if (bufferedInterval != NULL) {
     *newInterval = *bufferedInterval;
     return (newInterval->k <= newInterval->l);
   }
   //++stats->nDown;
+  */
   bwt_2occ(bwt, previousState->interval.k-1, previousState->interval.l, nucleotide, &newInterval->k, &newInterval->l);
   newInterval->k = bwt->L2[nucleotide] + newInterval->k + 1;
   newInterval->l = bwt->L2[nucleotide] + newInterval->l;
   //if (newState->interval.k <= newState->interval.l) printf("      ok!\n");
-  addToBwtBuffer(bwtBuffer, previousState->interval, nucleotide, *newInterval);
+  //addToBwtBuffer(bwtBuffer, previousState->interval, nucleotide, *newInterval);
   return (newInterval->k <= newInterval->l);
 }
 

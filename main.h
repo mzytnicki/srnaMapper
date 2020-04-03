@@ -38,7 +38,7 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
   unsigned int nErrors = states->minErrors[depth];
   state_t *theseStates = getState(states, depth, nErrors, 0);
   size_t nStates;
-  //simplifyStates(states, depth, nErrors);
+  simplifyStates(states, depth, nErrors);
   nStates = states->nStates[depth][nErrors];
   //printf("Quality size: %zu vs %zu\n", strlen(quality), depth);
   //printf("Quality: %s (%p)\n", quality, quality);
@@ -95,7 +95,8 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
   //state_t *nextState;
   bwtinterval_t nextInterval;
   bool mapFound = false;
-  //printf("    Mapping %c without error at depth %zu with %zu errors and %zu states\n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors]); fflush(stdout);
+  //printf("    Mapping %c without error at depth %zu with %zu errors and %zu states (%p) \n", "ACGT"[nt], depth, nErrors, states->nStates[depth-1][nErrors], states); fflush(stdout);
+  //printStates(states, depth); fflush(stdout);
   /*
   if (states->nStates[depth-1][nErrors] >= MANY_STATES) {
     simplifyStates(states, depth-1, nErrors);
@@ -722,7 +723,7 @@ void map (tree2_t *tree, outputSam_t *outputSam) {
   states_t *states = initializeStates(tree->depth);
   path_t   *path   = initializePath(tree->depth);
   cellVisitor_t cellVisitor;
-  createCellVisotor (&cellVisitor, &tree->cellInfos);
+  createCellVisitor (&cellVisitor, &tree->cellInfos);
   //printf("depth: %zu\n", tree->depth);
   //addState(&states, 0, 0, firstState);
   //goDownTree(tree, &path);

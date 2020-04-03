@@ -11,6 +11,7 @@
 #include <inttypes.h>
 #include <locale.h>
 #include <pthread.h>
+#include <stdatomic.h>
 
 #include "Libs/bwa/bwt.h"
 #include "Libs/bwa/bwa.h"
@@ -35,6 +36,7 @@
 #define N_TREE_BASE  65536
 
 #define N_STATES        0x1000
+#define MANY_STATES        0x200
 
 #define PREPROCESSED_DEPTH 15
 
