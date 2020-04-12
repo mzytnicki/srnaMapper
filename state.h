@@ -153,8 +153,7 @@ void computeBacktrace (state_t *state, outputSam_t *outputSam) {
 /**
  * Print all the reads in a given state
  */
-void printReadState (state_t *state, size_t depth, bwtint_t nHits, unsigned int nErrors, outputSam_t *outputSam) {
-  unsigned int hitId = 0;
+void printReadState (state_t *state, size_t depth, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, outputSam_t *outputSam) {
   int64_t pos;
   int strand, rid;
   for (bwtint_t bwtint = getStateInterval(state)->k; bwtint <= getStateInterval(state)->l; ++bwtint) {

@@ -34,6 +34,7 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
   assert(counts != NULL);
   char *seq = path->read + path->readPos;
   char *qual = quality;
+  bwtint_t hitId = 0;
   bwtint_t nHits = 0;
   unsigned int nErrors = states->minErrors[depth];
   state_t *theseStates = getState(states, depth, nErrors, 0);
@@ -64,7 +65,7 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
     nHits += theseStates[i].interval.l - theseStates[i].interval.k + 1;
   }
   if (nHits > parameters->maxNHits) {
-    fprintf(outputSam->file, "%s\t4\t*\t0\t0\t*\t*\t0\t0\t%s\t%s\tNH:i:%lu\tNM:i:%u\n", outputSam->qname, seq, qual, nHits, nErrors);
+    printReadLineManyHits(seq, qual, nHits, nErrors, outputSam);
     return;
   }
   if ((nHits == 1) && (nErrors == 0)) {
@@ -82,7 +83,8 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
       computeBacktrace(states, path->depth, nErrors, stateId, outputSam);
       computeCigar(outputSam);
     }
-    printReadState(&theseStates[stateId], path->depth, nHits, nErrors, outputSam);
+    printReadState(&theseStates[stateId], path->depth, nHits, hitId, nErrors, outputSam);
+    hitId += theseStates[stateId].interval.l - theseStates[stateId].interval.k + 1;
   }
 }
 
@@ -432,7 +434,7 @@ bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVis
   uint64_t cellId = path->cellIds[path->nCells];
   cell2_t *cell = &tree->cells[cellId];
   cellInfo_t *cellInfo;
-  edge_t *edge;
+  edge2_t *edge;
   unsetReadSequence(states->sw);
   /*
   for (size_t bestStateId = 0; bestStateId < tree->depth + parameters->maxNErrors + 1; ++bestStateId) {
@@ -448,7 +450,7 @@ bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVis
     path->edges[path->nCells] = *edge;
     path->cellIds[path->nCells] = cellId = edge->cellId;
     ++path->nCells;
-    addReadSequence(states->sw, edge->sequence, edge->length);
+    addReadSequence(states->sw, tree, edge);
     cell = &tree->cells[cellId];
     assert(getNChildren2(cell) <= 1);
   }
@@ -692,12 +694,14 @@ void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *c
     //printf("%" PRIu32 ": ", path->cellIds[path->nCells]);
     //printCell2(&tree->cells[path->cellIds[path->nCells]]);
     //printf("\n");
+    /*
     if ((mappable) && (shortCutCondition(states, tree, path))) {
       //printf("Short cut with positive exit\n"); fflush(stdout);
       tryShortCuts2(tree, states, path, cellVisitor, outputSam);
       mappable = false;
     }
     else {
+      */
       // advance in the tree
       //printf("Going to next tree\n");
       if (! goNextTree2(tree, states, path, firstCellId, lastCellId, mappable)) {
@@ -711,7 +715,7 @@ void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *c
           printRead(states, path, cellInfo, outputSam);
         }
       }
-    }
+    //}
   }
 }
 

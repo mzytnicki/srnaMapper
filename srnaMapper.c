@@ -97,6 +97,7 @@ int main(int argc, char const ** argv) {
   puts("Simplifying tree...");
   copyTree(&tree2, &tree);
   freeTree(&tree);
+  //printTree2(&tree2);
   puts("... done");
   puts("Loading genome...");
   idx = loadGenomeFile(parameters->genomeFileName);

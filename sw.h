@@ -5,6 +5,7 @@
 #include "helper.h"
 #include "state.h"
 #include "edge.h"
+#include "tree2.h"
 
 
 /******* Smith-Waterman cell type *******/
@@ -37,9 +38,9 @@ typedef struct {
  *
  */
 typedef struct {
-  unsigned short  *readSequence;
+  unsigned char   *readSequence;
   unsigned int     readLength;
-  unsigned short **genomeSequences;
+  unsigned char  **genomeSequences;
   unsigned int    *genomeLengths;
   bwtinterval_t    genomeInterval;
   uint64_t        *poss;
@@ -55,13 +56,13 @@ void createSW (sw_t *sw, size_t depth) {
   //printf("SW initialization depth is %zu\n", depth);
   size_t nRows = 2 * parameters->maxNErrors + 1;
   sw->nCols           = depth + 1;
-  sw->genomeSequences = (unsigned short **) malloc(MAX_SW_N_SEQUENCES * sizeof(unsigned short *));
-  sw->genomeLengths   = (unsigned int *)    calloc(MAX_SW_N_SEQUENCES,  sizeof(unsigned int));
-  sw->poss            = (uint64_t *)        malloc(MAX_SW_N_SEQUENCES * sizeof(uint64_t));
-  sw->strands         = (int *)             malloc(MAX_SW_N_SEQUENCES * sizeof(int));
-  sw->readSequence    = (unsigned short *)  malloc(depth * sizeof(unsigned short));
+  sw->genomeSequences = (unsigned char **) malloc(MAX_SW_N_SEQUENCES * sizeof(unsigned char *));
+  sw->genomeLengths   = (unsigned int *)   calloc(MAX_SW_N_SEQUENCES,  sizeof(unsigned int));
+  sw->poss            = (uint64_t *)       malloc(MAX_SW_N_SEQUENCES * sizeof(uint64_t));
+  sw->strands         = (int *)            malloc(MAX_SW_N_SEQUENCES * sizeof(int));
+  sw->readSequence    = (unsigned char *)  malloc(depth * sizeof(unsigned char));
   for (unsigned int i = 0; i < MAX_SW_N_SEQUENCES; ++i) {
-    sw->genomeSequences[i] = (unsigned short *) malloc(depth * sizeof(unsigned short));
+    sw->genomeSequences[i] = (unsigned char *) malloc(depth * sizeof(unsigned char));
   }
   sw->matrix = (sw_cell_t **) malloc(sw->nCols * sizeof(unsigned int *));
   for (size_t i = 0; i < sw->nCols; ++i) {
@@ -103,14 +104,13 @@ void unsetReadSequence (sw_t *sw) {
   sw->readLength = 0;
 }
 
-void addReadSequence (sw_t *sw, sequence_t sequence, unsigned int length) {
+void addReadSequence (sw_t *sw, const tree2_t *tree, const edge2_t *edge) {
   //TODO double-check the direction
   //printf("\t\t\tSetting read sequence (%d): ", length);
   //printSequence(sequence, length);
   //printf(", read length: %d\n", sw->readLength);
-  for (unsigned int i = 0; i < length; ++i) {
-    sw->readSequence[sw->readLength] = sequence & NUCLEOTIDE_MASK;
-    sequence >>= NUCLEOTIDES_BITS;
+  for (unsigned int i = 0; i < edge->length; ++i) {
+    sw->readSequence[sw->readLength] = getEdge2Nucleotide(tree, edge, i);
     if (sw->readLength < parameters->maxNErrors) {
       sw->matrix[sw->readLength+1][parameters->maxNErrors-sw->readLength-1].nucleotide = sw->readSequence[sw->readLength];
     }
@@ -161,7 +161,7 @@ unsigned int setGenomeSequences (sw_t *sw, state_t *state) {
   //TODO remove duplicate sequences
   /*
   for (unsigned int sequenceId = 1; sequenceId < sw->nGenomeSequences; ++sequenceId) {
-    if (memcmp(sw->genomeSequences[sequenceId], sw->genomeSequences[nSequencesUndup], sw->genomeLengths[sequenceId] * sizeof(unsigned short)) == 0) {
+    if (memcmp(sw->genomeSequences[sequenceId], sw->genomeSequences[nSequencesUndup], sw->genomeLengths[sequenceId] * sizeof(unsigned char)) == 0) {
       sw->genomeSequences[sequenceId] = NULL;
       ++nSequencesUndup;
     }
@@ -184,11 +184,11 @@ bool tryNoDiffSW (sw_t *sw, unsigned int genomeSequenceId) {
   //printf("\t\t\tShrinking genome to:     ");
   //printSequenceLong(sw->genomeSequences[genomeSequenceId], sw->readLength);
   //printf("\n");
-  unsigned short genomeNucleotide;
+  unsigned char genomeNucleotide;
   if (sw->readLength != sw->genomeLengths[genomeSequenceId]) {
     return false;
   }
-  if (memcmp(sw->readSequence, sw->genomeSequences[genomeSequenceId], sw->readLength * sizeof(unsigned short)) != 0) {
+  if (memcmp(sw->readSequence, sw->genomeSequences[genomeSequenceId], sw->readLength * sizeof(unsigned char)) != 0) {
     return false;
   }
   sw->alignmentSize = sw->readLength;
@@ -207,7 +207,7 @@ bool tryNoDiffSW (sw_t *sw, unsigned int genomeSequenceId) {
 
 unsigned int getScore (sw_t *sw, unsigned int genomeSequenceId, unsigned int maxNErrors) {
   uint64_t reconstructedGenomeSequence = 0;
-  unsigned short readNucleotide, genomeNucleotide;
+  unsigned char readNucleotide, genomeNucleotide;
   unsigned int readId, genomeId, xId, yId, startingYId = 2 * maxNErrors + 2, bestYId = startingYId;
   unsigned int v1, v2, v3;
   unsigned int minValue = maxNErrors + 1;

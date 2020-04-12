@@ -5,6 +5,9 @@
 #include "helper.h"
 #include "parameters.h"
 
+#define INITIAL_SAM_SIZE 0x10000
+#define MAX_SAM_LINE     0x200
+
 typedef struct {
   FILE *file;
   char *qname;
@@ -18,9 +21,13 @@ typedef struct {
   char *forwardQual;
   char *backwardQual;
   bool isBackwardSet;
+  pthread_mutex_t *writeMutex;
+  char *output;
+  size_t sizeOutput;
+  size_t allocatedOutput;
 } outputSam_t;
 
-void createOutputSam (outputSam_t *outputSam, unsigned int size) {
+void createOutputSam (outputSam_t *outputSam, unsigned int size, pthread_mutex_t *mutex) {
   outputSam->isBackwardSet    = false;
   outputSam->qname            = (char *)          malloc(MAX_QNAME_SIZE * sizeof(char));
   outputSam->backtraceCigar   = (char *)          malloc(MAX_CIGAR_SIZE * sizeof(char));
@@ -31,6 +38,11 @@ void createOutputSam (outputSam_t *outputSam, unsigned int size) {
   outputSam->backwardSeq      = (char *)          malloc((size+1)       * sizeof(char));
   outputSam->forwardQual      = (char *)          malloc((size+1)       * sizeof(char));
   outputSam->backwardQual     = (char *)          malloc((size+1)       * sizeof(char));
+  outputSam->writeMutex       = mutex;
+  outputSam->sizeOutput       = 0;
+  outputSam->allocatedOutput  = INITIAL_SAM_SIZE;
+  outputSam->output           = (char *)          malloc(outputSam->allocatedOutput * sizeof(char));
+  outputSam->output[0]        = 0;
 }
 
 void computeCigar (outputSam_t *outputSam) {
@@ -68,6 +80,7 @@ void freeOutputSam (outputSam_t *outputSam) {
   free(outputSam->backwardSeq);
   free(outputSam->forwardQual);
   free(outputSam->backwardQual);
+  free(outputSam->output);
 }
 
 void writeQname (outputSam_t *outputSam, count_t *counts) {
@@ -86,10 +99,25 @@ unsigned int computeMapq (unsigned int nHits, unsigned int nErrors) {
   }
 }
 
+void updateOutputAllocation (outputSam_t *outputSam) {
+  if (outputSam->sizeOutput + MAX_SAM_LINE >= outputSam->allocatedOutput) {
+    outputSam->allocatedOutput *= 2;
+    outputSam->output = (char *) realloc(outputSam->output, outputSam->allocatedOutput * sizeof(char)); 
+  }
+}
+
+/**
+ * Print one line in the SAM file, too many hits
+ */
+void printReadLineManyHits (char *seq, char *qual, bwtint_t nHits, unsigned int nErrors, outputSam_t *outputSam) {
+  outputSam->sizeOutput += sprintf(outputSam->output + outputSam->sizeOutput, "%s\t4\t*\t0\t0\t*\t*\t0\t0\t%s\t%s\tNH:i:%lu\tNM:i:%u\n", outputSam->qname, seq, qual, nHits, nErrors);
+  updateOutputAllocation(outputSam);
+}
+
 /**
  * Print one line in the SAM file
  */
-void printReadLine (bool forward, unsigned int flag, char *chrName, int64_t pos, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, outputSam_t *outputSam) {
+void printReadLine (bool forward, unsigned int flag, char *chrName, int64_t pos, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, outputSam_t *outputSam) {
   char *cigar, *seq, *qual;
   if (! outputSam->isBackwardSet) {
     computeReverseComplement(outputSam);
@@ -97,7 +125,8 @@ void printReadLine (bool forward, unsigned int flag, char *chrName, int64_t pos,
   cigar = (forward)? outputSam->forwardCigar: outputSam->backwardCigar;
   seq   = (forward)? outputSam->forwardSeq:   outputSam->backwardSeq;
   qual  = (forward)? outputSam->forwardQual:  outputSam->backwardQual;
-  fprintf(outputSam->file, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", outputSam->qname, flag, chrName, pos, computeMapq(nHits, nErrors), cigar, seq, qual, nHits, hitId, nHits, nErrors);
+  outputSam->sizeOutput += sprintf(outputSam->output + outputSam->sizeOutput, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", outputSam->qname, flag, chrName, pos, computeMapq(nHits, nErrors), cigar, seq, qual, nHits, hitId, nHits, nErrors);
+  updateOutputAllocation(outputSam);
 }
 
 /**
@@ -116,12 +145,30 @@ void printReadUniqueNoError (int strand, char *chrName, int64_t pos, size_t read
 /**
  * Collect information before printing read
  */
-void preparePrintRead (uint64_t pos, int rid, int strand, bwtint_t nHits, unsigned int hitId, unsigned int nErrors, outputSam_t *outputSam) {
+void preparePrintRead (uint64_t pos, int rid, int strand, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, outputSam_t *outputSam) {
   unsigned int flag = (hitId == 0)? 0: CIGAR_SECONDARY_HIT;
   if (strand == 0) {
     flag |= CIGAR_REVERSE;
   }
   printReadLine(strand != 0, flag, bns->anns[rid].name, pos, nHits, hitId, nErrors, outputSam);
+}
+
+void writeToSam (outputSam_t *outputSam) {
+  //printf("Acquiring w mutex\n"); fflush(stdout);
+  if (pthread_mutex_lock(outputSam->writeMutex) != 0) {
+    fprintf(stderr, "Error, Cannot acquire write mutex!\nExiting.\n");
+    exit(EXIT_FAILURE);
+  }
+  //printf("Acquiring w mutex done\n"); fflush(stdout);
+  fprintf(outputSam->file, outputSam->output);
+  //printf("Releasing w mutex\n"); fflush(stdout);
+  if (pthread_mutex_unlock(outputSam->writeMutex) != 0) {
+    fprintf(stderr, "Error, Cannot release write mutex!\nExiting.\n");
+    exit(EXIT_FAILURE);
+  }
+  //printf("Releasing w mutex done\n"); fflush(stdout);
+  outputSam->output[0] = 0;
+  outputSam->sizeOutput = 0;
 }
 
 FILE *openSamFile() {

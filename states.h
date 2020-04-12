@@ -242,6 +242,7 @@ void updateCounts (states_t *states, size_t depth, size_t nErrors, size_t nState
 }
 
 void addHashStates (states_t *states, size_t depth, size_t nErrors) {
+  /*
   assert(depth <= states->depth);
   size_t nNewStates = states->statesHash.nHashUsed + states->statesHash.nStatesVectorUsed;
   size_t offset;
@@ -259,6 +260,7 @@ void addHashStates (states_t *states, size_t depth, size_t nErrors) {
     memcpy(&states->states[nErrors][offset], &states->statesHash.statesVector[stateId], sizeof(state_t));
   }
   clearHash(&states->statesHash);
+  */
 }
 
 void printBacktrace (states_t *states, int depth, int nErrors, size_t stateId) {
@@ -303,7 +305,6 @@ state_t *_addState (states_t *states, size_t depth, size_t nErrors, bwtinterval_
 }
 
 void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
-  return;
   assert(depth < states->depth);
   assert(nErrors <= states->maxErrors[depth]);
   size_t previousNStates = states->nStates[depth][nErrors];
@@ -313,7 +314,7 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
     return;
   }
   //TODO check that the pointers are good!
-  //printf("\t\t\t\tSimplify states from %zu ", nStates);
+  //printf("\t\t\t\tSimplify states from %zu ", previousNStates);
   //printf("Entering Simplify States @ depth %zu with %zu errors and %zu elements.\n", depth, nErrors, previousNStates); fflush(stdout);
   qsort(theseStates, previousNStates, sizeof(state_t), sortCompareStates);
   for (size_t secondStateId = 1; secondStateId < previousNStates; ++secondStateId) {
@@ -330,7 +331,7 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
     }
   }
   ++nextNStates;
-  //printf("to %zu\n", firstStateId+1);
+  //printf("to %zu\n", nextNStates);
   states->nStates[depth][nErrors] = nextNStates;
   assert(states->nStatesPerPosition[depth] >= previousNStates - nextNStates);
   states->nStatesPerPosition[depth] -= previousNStates - nextNStates;
