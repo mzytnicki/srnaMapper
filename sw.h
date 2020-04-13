@@ -104,13 +104,15 @@ void unsetReadSequence (sw_t *sw) {
   sw->readLength = 0;
 }
 
-void addReadSequence (sw_t *sw, const tree2_t *tree, const edge2_t *edge) {
+//void addReadSequence (sw_t *sw, const tree2_t *tree, const edge2_t *edge) {
+void addReadSequence (sw_t *sw, const tree2_t *tree, const edge_t *edge) {
   //TODO double-check the direction
   //printf("\t\t\tSetting read sequence (%d): ", length);
   //printSequence(sequence, length);
   //printf(", read length: %d\n", sw->readLength);
   for (unsigned int i = 0; i < edge->length; ++i) {
-    sw->readSequence[sw->readLength] = getEdge2Nucleotide(tree, edge, i);
+    //sw->readSequence[sw->readLength] = getEdge2Nucleotide(tree, edge, i);
+    sw->readSequence[sw->readLength] = getNucleotide(edge->sequence, i);
     if (sw->readLength < parameters->maxNErrors) {
       sw->matrix[sw->readLength+1][parameters->maxNErrors-sw->readLength-1].nucleotide = sw->readSequence[sw->readLength];
     }

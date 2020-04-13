@@ -434,7 +434,8 @@ bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVis
   uint64_t cellId = path->cellIds[path->nCells];
   cell2_t *cell = &tree->cells[cellId];
   cellInfo_t *cellInfo;
-  edge2_t *edge;
+  //edge2_t *edge;
+  edge_t *edge;
   unsetReadSequence(states->sw);
   /*
   for (size_t bestStateId = 0; bestStateId < tree->depth + parameters->maxNErrors + 1; ++bestStateId) {

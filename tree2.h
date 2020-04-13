@@ -197,10 +197,13 @@ typedef struct {
   cell2_t   *cells;
   uint32_t   nEdges;
   uint32_t   nAllocatedEdges;
+  edge_t    *edges;
+  /*
   edge2_t   *edges;
   uint32_t   edgeSequenceAllocated;
   uint32_t   edgeSequenceLength;
   char      *edgeSequence;
+  */
   cellInfos_t cellInfos;
 } tree2_t;
 
@@ -212,21 +215,25 @@ void createTree2 (tree2_t *tree, size_t depth, uint32_t nCells, uint32_t nEdges,
   tree->nAllocatedCells = nCells;
   tree->nAllocatedEdges = nEdges;
   tree->cells = (cell2_t *) malloc(tree->nAllocatedCells * sizeof(cell2_t));
-  tree->edges = (edge2_t *) malloc(tree->nAllocatedEdges * sizeof(edge_t));
+  tree->edges = (edge_t *) malloc(tree->nAllocatedEdges * sizeof(edge_t));
+  /*
+  tree->edges = (edge2_t *) malloc(tree->nAllocatedEdges * sizeof(edge2_t));
   tree->edgeSequenceLength    = 0;
   tree->edgeSequenceAllocated = EDGE_SEQ_ALLOC;
   tree->edgeSequence = (char *) calloc(tree->edgeSequenceAllocated, sizeof(char));
+  */
   createCellInfos(&tree->cellInfos, nQualities, tree->depth, parameters->nReadsFiles);
 }
 
 void freeTree2 (tree2_t *tree) {
   free(tree->cells);
   free(tree->edges);
-  free(tree->edgeSequence);
+  //free(tree->edgeSequence);
   freeCellInfos(&tree->cellInfos);
 }
 
-edge2_t *getFirstEdge2 (const tree2_t *tree, const cell2_t *cell) {
+//edge2_t *getFirstEdge2 (const tree2_t *tree, const cell2_t *cell) {
+edge_t *getFirstEdge2 (const tree2_t *tree, const cell2_t *cell) {
   return &tree->edges[cell->firstEdge];
 }
 
@@ -246,6 +253,7 @@ uint32_t addCell2 (tree2_t *tree, uint32_t edgeId, unsigned char nEdges) {
   return tree->nCells-1;
 }
 
+/*
 #define N_NUCLEOTIDES_PER_BYTE 4
 #define EDGE_SEQUENCE_SHIFT 2
 #define EDGE_SEQUENCE_MASK  3
@@ -305,6 +313,7 @@ void copyEdgeSequence (tree2_t *tree, uint32_t sequence, uint32_t length) {
     sequence >>= NUCLEOTIDES_BITS;
   }
 }
+*/
 
 uint32_t addEdge2 (tree2_t *tree, uint32_t cellId, unsigned char childId, uint32_t sequence, uint32_t length) {
   assert(cellId < tree->nAllocatedCells);
@@ -315,8 +324,11 @@ uint32_t addEdge2 (tree2_t *tree, uint32_t cellId, unsigned char childId, uint32
   //printCell2(cell); printf("\n"); fflush(stdout);
   assert(edgeId < tree->nEdges);
   assert(edgeId < tree->nAllocatedEdges);
-  edge2_t *edge       = &tree->edges[edgeId];
+  //edge2_t *edge       = &tree->edges[edgeId];
+  edge_t *edge       = &tree->edges[edgeId];
   edge->length        = length;
+  edge->sequence = sequence;
+  /*
   if (length >= EDGE_SEQ_DIRECT_DEPTH) {
     edge->sequenceStart = tree->edgeSequenceLength;
     copyEdgeSequence(tree, sequence, length);
@@ -324,12 +336,11 @@ uint32_t addEdge2 (tree2_t *tree, uint32_t cellId, unsigned char childId, uint32
   else {
     edge->sequenceStart = sequence;
   }
-  /*
-  printf("Compare sequence (size %" PRIu32 "): ", length);
-  printSequence(sequence, length);
-  printf(" with edge ");
-  printEdge2Sequence(tree, edge); printf("\n"); fflush(stdout);
   */
+  //printf("Compare sequence (size %" PRIu32 "): ", length);
+  //printSequence(sequence, length);
+  //printf(" with edge ");
+  //printEdge2Sequence(tree, edge); printf("\n"); fflush(stdout);
   return edgeId;
 }
 
@@ -395,7 +406,8 @@ cellInfo_t *getCellInfoTree (uint32_t cellId, cellVisitor_t *cellVisitor) {
  * Print the last nucleotides (close to the leaves) of the tree.
  */
 void __printTree2 (const tree2_t *tree, char *read, size_t readPos, uint32_t cellId, cellVisitor_t *cellVisitor) {
-  edge2_t *edge;
+  edge_t *edge;
+  //edge2_t *edge;
   cellInfo_t *cellInfo;
   cell2_t *cell = &tree->cells[cellId];
   //printf("Read: %s at %"PRIu32 " with %" PRIu32 " children at pos %zu/%zu\n", read+tree->depth-readPos, cellId, cell->nEdges, readPos, tree->depth); fflush(stdout);
@@ -408,7 +420,8 @@ void __printTree2 (const tree2_t *tree, char *read, size_t readPos, uint32_t cel
     //printf("Following to node %" PRIu32 " -> %" PRIu32 " and length %" PRIu32 "\n", edgeId, edge->cellId, edge->length); fflush(stdout);
     for (size_t i = 0; i < edge->length; ++i) {
       assert(1 + readPos + i <= tree->depth);
-      read[tree->depth-readPos-1-i] = DNA5_TO_CHAR[getEdge2Nucleotide(tree, edge, i)];
+      //read[tree->depth-readPos-1-i] = DNA5_TO_CHAR[getEdge2Nucleotide(tree, edge, i)];
+      read[tree->depth-readPos-1-i] = DNA5_TO_CHAR[getNucleotide(edge->sequence, i)];
     }
     __printTree2(tree, read, readPos + edge->length, edge->cellId, cellVisitor);
   }

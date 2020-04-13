@@ -28,7 +28,8 @@ typedef struct {
   size_t          nCells;
   size_t          maxDepth;
   size_t          depth;
-  edge2_t        *edges;
+  edge_t        *edges;
+  //edge2_t        *edges;
   size_t          edgeLength;
   char           *read;
   size_t          readPos;
@@ -48,7 +49,8 @@ void printPath (path_t *path) {
     //if ((i >= TREE_BASE_SIZE) && (i < path->nCells)) {
     if (i >= TREE_BASE_SIZE) {
       printf("child #%i ", path->children[i]);
-      printEdge2(&path->edges[i]);
+      //printEdge2(&path->edges[i]);
+      printEdge(&path->edges[i]);
     }
     printf("  ");
   }
@@ -67,7 +69,8 @@ path_t *initializePath (size_t maxDepth) {
   path->nucleotides    = (unsigned short *) malloc(maxDepth * sizeof(unsigned short));
   path->children       = (unsigned short *) malloc(maxDepth * sizeof(unsigned short));
   path->cellIds        = (uint32_t *)       malloc((maxDepth+1) * sizeof(uint32_t));
-  path->edges          = (edge2_t *)        malloc((maxDepth+1) * sizeof(edge2_t));
+  path->edges          = (edge_t *)        malloc((maxDepth+1) * sizeof(edge_t));
+  //path->edges          = (edge2_t *)        malloc((maxDepth+1) * sizeof(edge2_t));
   path->read           = (char *)           malloc((maxDepth+1) * sizeof(char));
   path->maxDepth       = maxDepth;
   path->cellIds[0]     = 0;
@@ -95,15 +98,45 @@ void appendNucleotidePath (path_t *path, unsigned short nucleotide, char c) {
   path->read[path->readPos] = c;
 }
 
+bool isAfterFirstCellId (size_t depth, size_t cellId, uint32_t firstCellId) {
+  /*
+  if ((firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells))) > path->cellIds[path->nCells]) {
+    printf("Depth: %zu, cell: %" PRIu32 ", 1st cell: %" PRIu32 ", computed: %" PRIu32 ", target sequence: ", path->nCells, path->cellIds[path->depth], firstCellId, firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells)));
+    printSequence(firstCellId, TREE_BASE_SIZE);
+    printf(", current sequence: ");
+    printSequence(firstCellId, path->nCells);
+    printf(", computed sequence: ");
+    printSequence(firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells)), path->nCells);
+    printf("\n");
+    fflush(stdout);
+  }
+  */
+  if (depth == 0) {
+    return true;
+  }
+  if (depth > TREE_BASE_SIZE) {
+    return true;
+  }
+  return ((firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - depth))) <= cellId);
+}
+
 /**
  * Step into the last cells of the tree in a DFS fashion.
  */
-bool goDownTreeBase (path_t *path) {
+bool goDownTreeBase (path_t *path, uint32_t firstCellId) {
+  uint32_t cellId = path->cellIds[path->nCells] << NUCLEOTIDES_BITS;
+  for (unsigned char nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
+    if (isAfterFirstCellId(path->depth+1, cellId, firstCellId)) {
+      path->cellIds[path->nCells+1] = cellId;
+      appendNucleotidePath(path, nucleotide, "ACGT"[nucleotide]);
+      ++path->nCells;
+      return true;
+    }
+    ++cellId;
+  }
   //printf("\t\tGoing to base\n");
-  appendNucleotidePath(path, 0, 'A');
-  path->cellIds[path->nCells+1] = path->cellIds[path->nCells] << NUCLEOTIDES_BITS;
-  ++path->nCells;
-  return true;
+  //printPath(path);
+  return false;
 }
 
 /**
@@ -150,20 +183,22 @@ bool goDownTreeNotBase (const tree_t *tree, path_t *path) {
  * Step into the first cells of the tree in a DFS fashion.
  */
 bool goDownTree2NotBase (const tree2_t *tree, path_t *path) {
-  printf("\t\tGoing to tree\n");
-  edge2_t *edge = NULL;
+  //printf("\t\tGoing to tree\n");
+  //edge2_t *edge = NULL;
+  edge_t *edge = NULL;
   unsigned short nucleotide;
-  printPath(path);
+  //printPath(path);
   assert(path->depth <= tree->depth);
   assert(path->nCells <= tree->depth);
   if (path->edgeLength == 0) {
     cell2_t *cell = &tree->cells[path->cellIds[path->nCells]];
     if (cell->nEdges == 0) {
-      printf("\t\t\tNothing\n");
+      //printf("\t\t\tNothing\n");
       return false;
     }
     edge = &tree->edges[cell->firstEdge];
-    nucleotide = getEdge2Nucleotide(tree, edge, 0);
+    //nucleotide = getEdge2Nucleotide(tree, edge, 0);
+    nucleotide = getNucleotide(edge->sequence, 0);
     path->edges[path->nCells]    = *edge;
     path->children[path->nCells] = 0;
     path->edgeLength             = 1;
@@ -172,11 +207,12 @@ bool goDownTree2NotBase (const tree2_t *tree, path_t *path) {
       path->edgeLength = 0;
       path->cellIds[++path->nCells] = edge->cellId;
     }
-    printf("to %zu with read '%s'\n", path->depth, path->read+path->readPos);
+    //printf("to %zu with read '%s'\n", path->depth, path->read+path->readPos);
     return true;
   }
   edge = &path->edges[path->nCells];
-  nucleotide = getEdge2Nucleotide(tree, edge, path->edgeLength);
+  //nucleotide = getEdge2Nucleotide(tree, edge, path->edgeLength);
+  nucleotide = getNucleotide(edge->sequence, path->edgeLength);
   ++path->edgeLength;
   appendNucleotidePath(path, nucleotide, DNA5_TO_CHAR[nucleotide]);
   if (path->edgeLength == edge->length) {
@@ -190,11 +226,11 @@ bool goDownTree2NotBase (const tree2_t *tree, path_t *path) {
  * Step into the tree in a DFS fashion.
  * Return false if search is exhausted.
  */
-bool goDownTree2 (const tree2_t *tree, path_t *path) {
+bool goDownTree2 (const tree2_t *tree, path_t *path, uint32_t firstCellId) {
   //printf("\tGo down from height %zu with read '%s'\n", path->depth, path->read+path->readPos);
   //printPath(path);
   if (path->depth < TREE_BASE_SIZE) {
-    return goDownTreeBase(path);
+    return goDownTreeBase(path, firstCellId);
   }
   return goDownTree2NotBase(tree, path);
 }
@@ -254,7 +290,8 @@ bool goRightTreeBase (path_t *path, uint32_t lastCellId) {
 bool goRightTree2NotBase (const tree2_t *tree, path_t *path, uint64_t lastCellId) {
   assert(path->depth <= path->maxDepth);
   assert(path->nCells <= path->maxDepth);
-  edge2_t *edge;
+  //edge2_t *edge;
+  edge_t *edge;
   unsigned short childId, nucleotide;
   //printf("    not base\n");
   while (true) {
@@ -289,7 +326,8 @@ bool goRightTree2NotBase (const tree2_t *tree, path_t *path, uint64_t lastCellId
       //printf("    ... edge ");
       //printEdge(edge);
       //printf("\n");
-      nucleotide = getEdge2Nucleotide(tree, edge, 0);
+      //nucleotide = getEdge2Nucleotide(tree, edge, 0);
+      nucleotide = getNucleotide(edge->sequence, 0);
       path->nucleotides[path->depth] = nucleotide;
       ++path->depth;
       --path->readPos;
@@ -326,28 +364,6 @@ bool goRightTree2 (const tree2_t *tree, path_t *path, uint32_t lastCellId) {
   return goRightTreeBase(path, lastCellId);
 }
 
-bool isAfterFirstCellId (path_t *path, uint32_t firstCellId) {
-  /*
-  if ((firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells))) > path->cellIds[path->nCells]) {
-    printf("Depth: %zu, cell: %" PRIu32 ", 1st cell: %" PRIu32 ", computed: %" PRIu32 ", target sequence: ", path->nCells, path->cellIds[path->depth], firstCellId, firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells)));
-    printSequence(firstCellId, TREE_BASE_SIZE);
-    printf(", current sequence: ");
-    printSequence(firstCellId, path->nCells);
-    printf(", computed sequence: ");
-    printSequence(firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells)), path->nCells);
-    printf("\n");
-    fflush(stdout);
-  }
-  */
-  if (path->depth == 0) {
-    return true;
-  }
-  if (path->depth > TREE_BASE_SIZE) {
-    return true;
-  }
-  return ((firstCellId >> (NUCLEOTIDES_BITS * (TREE_BASE_SIZE - path->nCells))) <= path->cellIds[path->nCells]);
-}
-
 /**
  * Go to next child node in reads tree.  If none, go to sibling
  */
@@ -355,26 +371,36 @@ bool goNextTree2 (const tree2_t *tree, states_t *states, path_t *path, uint32_t 
   // First make sure that we are not before the first cell
   //printf("cell id %" PRIu32 "\n", path->cellIds[path->nCells]); fflush(stdout);
   //printf("Entering goNextTree2 with states %p, path %p, depth %zu, ncells %zu, cell id %" PRIu32 ", interval [%" PRIu32 "-%" PRIu32 "]\n", states, path, path->depth, path->nCells, path->cellIds[path->nCells], firstCellId, lastCellId); fflush(stdout);
+  //printf("Entering goNext\n");
+  //printPath(path);
+  /*
   while (! isAfterFirstCellId(path, firstCellId)) {
     assert(path->nCells > 0);
+    printf("  Goto next adjusted\n");
     if (! goRightTree2(tree, path, lastCellId)) {
       return false;
     }
+    printPath(path);
   }
-  printf("  Goto next\n");
+  */
   if (mappable) {
-    printf("    Mappable\n");
-    if (goDownTree2(tree, path)) {
+    //printf("    Mappable\n");
+    if (goDownTree2(tree, path, firstCellId)) {
+      //printf("    Going down\n");
+      //printPath(path);
       return true;
     }
+    if (path->depth == 0) {
+      return false;
+    }
   }
-  printf("  Going right\n");
-  printStates(states, path->depth);
-  printPath(path);
+  //printf("  Going right\n");
+  //printStates(states, path->depth);
+  //printPath(path);
   if (! goRightTree2(tree, path, lastCellId)) {
     return false;
   }
-  printf("  Now\n");
+  //printf("  Now\n");
   //printStates(states, path->depth);
   backtrackStates(states, path->depth);
   return true;

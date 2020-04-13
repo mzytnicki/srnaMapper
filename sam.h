@@ -125,7 +125,7 @@ void printReadLine (bool forward, unsigned int flag, char *chrName, int64_t pos,
   cigar = (forward)? outputSam->forwardCigar: outputSam->backwardCigar;
   seq   = (forward)? outputSam->forwardSeq:   outputSam->backwardSeq;
   qual  = (forward)? outputSam->forwardQual:  outputSam->backwardQual;
-  outputSam->sizeOutput += sprintf(outputSam->output + outputSam->sizeOutput, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%u\tIH:i:%lu\tNM:i:%u\n", outputSam->qname, flag, chrName, pos, computeMapq(nHits, nErrors), cigar, seq, qual, nHits, hitId, nHits, nErrors);
+  outputSam->sizeOutput += sprintf(outputSam->output + outputSam->sizeOutput, "%s\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%lu\tHI:i:%lu\tIH:i:%lu\tNM:i:%u\n", outputSam->qname, flag, chrName, pos, computeMapq(nHits, nErrors), cigar, seq, qual, nHits, hitId, nHits, nErrors);
   updateOutputAllocation(outputSam);
 }
 
@@ -160,7 +160,7 @@ void writeToSam (outputSam_t *outputSam) {
     exit(EXIT_FAILURE);
   }
   //printf("Acquiring w mutex done\n"); fflush(stdout);
-  fprintf(outputSam->file, outputSam->output);
+  fprintf(outputSam->file, "%s", outputSam->output);
   //printf("Releasing w mutex\n"); fflush(stdout);
   if (pthread_mutex_unlock(outputSam->writeMutex) != 0) {
     fprintf(stderr, "Error, Cannot release write mutex!\nExiting.\n");
