@@ -36,7 +36,7 @@
 #define N_TREE_BASE  65536
 
 #define N_STATES        0x1000
-#define MANY_STATES        0x200
+#define MANY_STATES        0x10
 
 #define PREPROCESSED_DEPTH 15
 

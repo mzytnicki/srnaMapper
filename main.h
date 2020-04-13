@@ -254,13 +254,14 @@ void mapWithErrors (states_t *states, path_t *path) {
   //printStates(states, path->depth-1);
   //printPath(path); fflush(stdout);
   //TODO check this
-  /*
   if (path->depth == TREE_BASE_SIZE) {
-    for (size_t nErrors = states->minErrors[TREE_BASE_SIZE]; nErrors <= states->maxErrors[TREE_BASE_SIZE]; ++nErrors) {
+    for (size_t nErrors = MAX(1, states->minErrors[TREE_BASE_SIZE]); nErrors <= states->maxErrors[TREE_BASE_SIZE]; ++nErrors) {
       simplifyStates(states, TREE_BASE_SIZE, nErrors);
     }
   }
-  */
+  else if (states->nStates[path->depth][states->minErrors[path->depth]] >= MANY_STATES) {
+    simplifyStates(states, path->depth, states->minErrors[path->depth]);
+  }
 }
 
 bool shortCutCondition (const states_t *states, const tree2_t *tree, const path_t *path) {
