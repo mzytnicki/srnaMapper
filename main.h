@@ -78,7 +78,10 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
   //printf("Read: %s, read length: %zu\n", forwardSeq, readLength);
   //printStates(states, depth);
   for (size_t stateId = 0; stateId < nStates; ++stateId) {
-    if (nErrors != 0) {
+    if (nErrors == 0) {
+      setCigarNoError(outputSam, path->depth);
+    }
+    else {
       //printf("depth: %zu\n", depth);
       computeBacktrace(states, path->depth, nErrors, stateId, outputSam);
       computeCigar(outputSam);
