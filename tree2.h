@@ -67,58 +67,88 @@ void printCellInfo (const cellInfo_t *cellInfo) {
  * The infos a supposed to be read sequentially, from the first cell to the last (possibly skipping some)...
  */
 typedef struct {
-  size_t nAllocatedCellInfos;
-  size_t nCellInfos;
-  cellInfo_t *cellInfos;
+  size_t        nAllocatedCellInfos;
+  size_t        nCellInfos;
+  uint32_t     *cellIds;
+  char        **qualities;
+  count_t      *counts;
 } cellInfos_t;
 
-typedef struct {
-  cellInfo_t *currentCellInfo;
-} cellVisitor_t;
+typedef size_t cellVisitor_t;
 
-void clearCellVisitor (cellVisitor_t *cellVisitor, const cellInfos_t *cellInfos) {
-  cellVisitor->currentCellInfo = cellInfos->cellInfos;
+void clearCellVisitor (cellVisitor_t *cellVisitor) {
+  *cellVisitor = 0;
 }
 
 void createCellInfos (cellInfos_t *cellInfos, size_t nInfos, size_t readSize, size_t nSamples) {
   cellInfos->nAllocatedCellInfos = nInfos;
-  cellInfos->nCellInfos = 0;
-  cellInfos->cellInfos = (cellInfo_t *) malloc((nInfos+1) * sizeof(cellInfo_t));  
-  for (unsigned int i = 0; i < nInfos; ++i) {
-    createCellInfo(&cellInfos->cellInfos[i], readSize, nSamples);
-  }
-  createEmptyCellInfo(&cellInfos->cellInfos[nInfos]);
+  cellInfos->nCellInfos          = 0;
+  cellInfos->cellIds             = (uint32_t *) malloc((nInfos+1) * sizeof(uint32_t));  
+  cellInfos->counts              = (count_t *) malloc(nInfos * (parameters->nReadsFiles) * sizeof(count_t));  
+  cellInfos->qualities           = (char **) malloc(nInfos * sizeof(char *));  
+  cellInfos->cellIds[nInfos]     = NO_INFO;
 }
 
 void freeCellInfos (cellInfos_t *cellInfos) {
-  for (unsigned int i = 0; i < cellInfos->nAllocatedCellInfos; ++i) {
-    freeCellInfo(&cellInfos->cellInfos[i]);
+  for (size_t cellInfosId = 0; cellInfosId < cellInfos->nCellInfos; ++cellInfosId) {
+    free(cellInfos->qualities[cellInfosId]);
   }
-  free(cellInfos->cellInfos);
+  free(cellInfos->cellIds);
+  free(cellInfos->qualities);
+  free(cellInfos->counts);
 }
 
 void addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t readSize, count_t *counts, unsigned int nSamples) {
   assert(cellInfos->nCellInfos < cellInfos->nAllocatedCellInfos);
   //printf("Setting cell info #%" PRIu32 "\n", cellId);
-  setCellInfo(&cellInfos->cellInfos[cellInfos->nCellInfos], cellId, quality, readSize, counts, nSamples);
+  cellInfos->cellIds[cellInfos->nCellInfos] = cellId;
+  memcpy(cellInfos->counts + (parameters->nReadsFiles * cellInfos->nCellInfos), counts, parameters->nReadsFiles * sizeof(count_t));
+  cellInfos->qualities[cellInfos->nCellInfos] = (char *) malloc(readSize + 1);
+  if (cellInfos->qualities[cellInfos->nCellInfos] == NULL) {
+    fprintf(stderr, "Error, cannot add quality to compressed tree.\nExiting.\n");
+    exit(EXIT_FAILURE);
+  }
+  memcpy(cellInfos->qualities[cellInfos->nCellInfos], quality, readSize+1);
   ++cellInfos->nCellInfos;
 }
 
-cellInfo_t *getCellInfo (uint32_t cellId, cellVisitor_t *cellVisitor) {
+//cellInfo_t *getCellInfo (uint32_t cellId, cellVisitor_t *cellVisitor) {
+bool getCellInfo (const cellInfos_t *cellInfos, uint32_t cellId, cellVisitor_t *cellVisitor) {
   //printf("Looking for cell info %" PRIu32 "\n", cellId); fflush(stdout);
-  //printf("Current state is %p %" PRIu32 "\n", cellVisitor, cellVisitor->currentCellInfo->cellId); fflush(stdout);
+  //printf("Current state is %zu -> %" PRIu32 "\n", cellVisitor, cellInfos->cellIds[*cellVisitor]); fflush(stdout);
   //printf("Current state is %p\n", cellInfos->cellInfos + cellInfos->nCellInfos); fflush(stdout);
+  /*
   for (; (! isEmptyCellInfo(cellVisitor->currentCellInfo)) && (cellVisitor->currentCellInfo->cellId < cellId); ++cellVisitor->currentCellInfo) {
     //printf("Got %" PRIu32 "\n", cellVisitor->currentCellInfo->cellId); fflush(stdout);
   }
   return (cellVisitor->currentCellInfo->cellId == cellId)? cellVisitor->currentCellInfo: NULL;
+  */
+  for (; cellInfos->cellIds[*cellVisitor] < cellId; ++(*cellVisitor)) {
+    if (cellInfos->cellIds[*cellVisitor] == NO_INFO) {
+      //printf("Over\n"); fflush(stdout);
+      return false;
+    }
+    //printf("Got %" PRIu32 "\n", cellInfos->cellIds[*cellVisitor]); fflush(stdout);
+  }
+  return (cellInfos->cellIds[*cellVisitor] == cellId);
 }
 
+count_t *getCounts (const cellInfos_t *cellInfos, cellVisitor_t cellVisitor) {
+  return cellInfos->counts + (cellVisitor * parameters->nReadsFiles);
+}
+
+char *getQuality (const cellInfos_t *cellInfos, cellVisitor_t cellVisitor) {
+  return cellInfos->qualities[cellVisitor];
+}
+
+
+/*
 void printCellInfos (const cellInfos_t *cellInfos) {
   for (size_t cellInfoId = 0; cellInfoId < cellInfos->nCellInfos; ++cellInfoId) {
     printCellInfo(&cellInfos->cellInfos[cellInfoId]);
   }
 }
+*/
 
 #define EDGE2_SEQ_START_LENGTH  26
 #define MAX_EDGE2_SEQ_START     (1 << EDGE2_SEQ_START_LENGTH)
@@ -398,8 +428,8 @@ void copyTree (tree2_t *tree2, const tree_t *tree) {
   }
 }
 
-cellInfo_t *getCellInfoTree (uint32_t cellId, cellVisitor_t *cellVisitor) {
-  return getCellInfo(cellId, cellVisitor);
+bool getCellInfoTree (const tree2_t *tree, uint32_t cellId, cellVisitor_t *cellVisitor) {
+  return getCellInfo(&tree->cellInfos, cellId, cellVisitor);
 }
 
 /**
@@ -408,10 +438,9 @@ cellInfo_t *getCellInfoTree (uint32_t cellId, cellVisitor_t *cellVisitor) {
 void __printTree2 (const tree2_t *tree, char *read, size_t readPos, uint32_t cellId, cellVisitor_t *cellVisitor) {
   edge_t *edge;
   //edge2_t *edge;
-  cellInfo_t *cellInfo;
   cell2_t *cell = &tree->cells[cellId];
   //printf("Read: %s at %"PRIu32 " with %" PRIu32 " children at pos %zu/%zu\n", read+tree->depth-readPos, cellId, cell->nEdges, readPos, tree->depth); fflush(stdout);
-  if ((cellInfo = getCellInfoTree(cellId, cellVisitor)) != NULL) {
+  if (getCellInfoTree(tree, cellId, cellVisitor)) {
     printf("%s\n", read+tree->depth-readPos);
     //assert(strlen(read+tree->depth-readPos) == strlen(cell->quality));
   }
@@ -450,12 +479,12 @@ void printTree2 (const tree2_t *tree) {
   printf("Printing tree\n");
   char *read = (char *) malloc((tree->depth+1) * sizeof(char));
   cellVisitor_t cellVisitor;
-  clearCellVisitor(&cellVisitor, &tree->cellInfos);
+  clearCellVisitor(&cellVisitor);
   read[tree->depth] = 0;
   _printTree2(tree, read, 0, 0, &cellVisitor);
   free(read);
-  printf("Printing cell info\n");
-  printCellInfos(&tree->cellInfos);
+  //printf("Printing cell info\n");
+  //printCellInfos(&tree->cellInfos);
 }
 
 

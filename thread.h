@@ -60,7 +60,7 @@ void *threadMain (void *parametersVoid) {
   outputSam.file = parameters->samFile;
   createOutputSam(&outputSam, parameters->tree->depth, parameters->writeMutex);
   updateBounds(&firstCellId, &lastCellId, parameters->incMutex);
-  clearCellVisitor(&cellVisitor, &parameters->tree->cellInfos);
+  clearCellVisitor(&cellVisitor);
   while (firstCellId <= N_TREE_BASE) {
     //printf("Starting thread %" PRIu32 "-%" PRIu32 ": ", firstCellId, lastCellId);
     //printSequence(firstCellId, TREE_BASE_SIZE);

@@ -21,17 +21,15 @@
 /**
  * Print read in SAM format
  */
-void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_t *outputSam) {
+void printRead (states_t *states, path_t *path, count_t *counts, char *quality, outputSam_t *outputSam) {
   assert(path->depth <= path->maxDepth);
-  assert(cellInfo != NULL);
+  assert(quality != NULL);
+  assert(counts != NULL);
   //printf("Entering 'printRead'\n");
   //printCellInfo(cellInfo);
   size_t depth = path->depth;
   int strand, rid;
   int64_t pos;
-  char *quality = cellInfo->quality;
-  count_t *counts = cellInfo->counts;
-  assert(counts != NULL);
   char *seq = path->read + path->readPos;
   char *qual = quality;
   bwtint_t hitId = 0;
@@ -43,7 +41,7 @@ void printRead (states_t *states, path_t *path, cellInfo_t *cellInfo, outputSam_
   nStates = states->nStates[depth][nErrors];
   //printf("Quality size: %zu vs %zu\n", strlen(quality), depth);
   //printf("Quality: %s (%p)\n", quality, quality);
-  //printf("Read:    %s\n", forwardSeq);
+  //printf("Read:    %s\n", seq);
   assert(strlen(quality) == depth);
   //printf("Printing read\n");
   //printPath(path); fflush(stdout);
@@ -416,6 +414,7 @@ bool tryShortCuts (const tree_t *tree, states_t *states, path_t *path, outputSam
 }
 */
 
+/*
 bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *cellVisitor, outputSam_t *outputSam) {
   //printf("    Entering tryShortCuts will cell %" PRIu32 " at depth %zu, last nt %i, and read pos %zu, edge len: %zu\n", path->cellIds[path->nCells], path->depth, path->nucleotides[path->depth-1], path->readPos, path->edgeLength);
   //printPath(path);
@@ -437,15 +436,13 @@ bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVis
   state_t *nextState;
   uint64_t cellId = path->cellIds[path->nCells];
   cell2_t *cell = &tree->cells[cellId];
-  cellInfo_t *cellInfo;
+  bool foundCellInfo;
   //edge2_t *edge;
   edge_t *edge;
   unsetReadSequence(states->sw);
-  /*
-  for (size_t bestStateId = 0; bestStateId < tree->depth + parameters->maxNErrors + 1; ++bestStateId) {
-    setEmptyState(&bestStates[bestStateId]);
-  }
-  */
+  //for (size_t bestStateId = 0; bestStateId < tree->depth + parameters->maxNErrors + 1; ++bestStateId) {
+    //setEmptyState(&bestStates[bestStateId]);
+  //}
   // Tree is unbranched, so take everything for now on.
   do {
     edge = getFirstEdge2(tree, cell);
@@ -464,14 +461,12 @@ bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVis
   //printPath(path); fflush(stdout);
   //printf("\t\tAdding first sequence %" PRIu32 " & %" PRIu32 " = %" PRIu32 " size: %i\n", path->cellIds[TREE_BASE_SIZE], N_TREE_BASE - 1, path->cellIds[TREE_BASE_SIZE] & (N_TREE_BASE - 1), TREE_BASE_SIZE);
   //addReadSequence(states->sw, path->cellIds[TREE_BASE_SIZE] & (N_TREE_BASE - 1), TREE_BASE_SIZE);
-  /*
-  for (unsigned int nCells = TREE_BASE_SIZE; nCells <= path->nCells; ++nCells) {
-    printf("\t\tAdding sequence %u/%zu to short cut: ", nCells, path->nCells);
-    printEdge(&path->edges[nCells]);
-    printf("\n"); fflush(stdout);
-    addReadSequence(states->sw, path->edges[nCells].sequence, path->edges[nCells].length);
-  }
-  */
+  //for (unsigned int nCells = TREE_BASE_SIZE; nCells <= path->nCells; ++nCells) {
+    //printf("\t\tAdding sequence %u/%zu to short cut: ", nCells, path->nCells);
+    //printEdge(&path->edges[nCells]);
+    //printf("\n"); fflush(stdout);
+    //addReadSequence(states->sw, path->edges[nCells].sequence, path->edges[nCells].length);
+  //}
   //TODO store all the best paths instead
   for (unsigned int nErrors = states->minErrors[previousDepth]; (nErrors <= states->maxErrors[previousDepth]) && (nErrors <= bestNErrors); ++nErrors) {
     //printf("      Trying with %u errors\n", nErrors);
@@ -531,15 +526,13 @@ bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVis
     //printf("\tbest state: %c/%c\n", CIGAR[bestStates[i].trace], "ACGT"[bestStates[i].nucleotide]);
     //printState(nextState, 10); fflush(stdout);
     // TODO: is this really correct?
-    /*
-    if (nextState == NULL) {
-      path->nCells  = previousNCells;
-      path->depth   = previousDepth;
-      path->readPos = previousReadPos;
-      backtrackStates(states, path->depth);
-      return false;
-    }
-    */
+    //if (nextState == NULL) {
+      //path->nCells  = previousNCells;
+      //path->depth   = previousDepth;
+      //path->readPos = previousReadPos;
+      //backtrackStates(states, path->depth);
+      //return false;
+    //}
     nextState = addState(states, path->depth+1, currentNErrors, &bestStates[i].interval, bestStates[i].trace, bestStates[i].nucleotide, bestStateId, true);
     //printState(nextState, path->depth+1); fflush(stdout);
     assert(nextState != NULL);
@@ -574,11 +567,11 @@ bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVis
   assert(currentNErrors == bestNErrors);
   //printStates(states, path->depth+1);
   //printPath(path);
-  cellInfo = getCellInfoTree(cellId, cellVisitor);
-  assert(cellInfo != NULL);
-  writeQname(outputSam, cellInfo->counts);
+  foundCellInfo = getCellInfoTree(tree, cellId, cellVisitor);
+  assert(foundCellInfo);
+  writeQname(outputSam, getCounts(&tree->cellInfos, *cellVisitor));
   memcpy(outputSam->forwardSeq,  path->read + path->readPos,  (path->depth+1) * sizeof(char));
-  memcpy(outputSam->forwardQual, cellInfo->quality, (path->depth+1) * sizeof(char));
+  memcpy(outputSam->forwardQual, getQuality(&tree->cellInfos, *cellVisitor), (path->depth+1) * sizeof(char));
   outputSam->isBackwardSet = false;
   computeCigar(outputSam);
   bestPos = (bestStrand)? bestPos + genomeAlignmentSize: bestPos - genomeAlignmentSize;
@@ -593,6 +586,7 @@ bool tryShortCuts2 (const tree2_t *tree, states_t *states, path_t *path, cellVis
   backtrackStates(states, path->depth);
   return true;
 }
+*/
 
 /*
 bool tryShortCut (const tree_t *tree, states_t *states, path_t *path, FILE *outputSamFile) {
@@ -693,7 +687,6 @@ bool findBestMapping (states_t *states, path_t *path) {
  */
 void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *cellVisitor, uint32_t firstCellId, uint32_t lastCellId, outputSam_t *outputSam) {
   bool mappable = true;
-  cellInfo_t *cellInfo;
   while (true) {
     //printPath(path); fflush(stdout);
     //printf("%" PRIu32 ": ", path->cellIds[path->nCells]);
@@ -716,8 +709,9 @@ void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *c
       mappable = findBestMapping(states, path);
       //printf("\tRead is mappable: %s\n", (mappable)? "yes": "no");
       if ((path->depth >= TREE_BASE_SIZE) && (mappable) && (path->edgeLength == 0)) {
-        if ((cellInfo = getCellInfoTree(path->cellIds[path->nCells], cellVisitor)) != NULL) {
-          printRead(states, path, cellInfo, outputSam);
+        //if ((cellInfo = getCellInfoTree(path->cellIds[path->nCells], cellVisitor)) != NULL) {
+        if (getCellInfoTree(tree, path->cellIds[path->nCells], cellVisitor)) {
+          printRead(states, path, getCounts(&tree->cellInfos, *cellVisitor), getQuality(&tree->cellInfos, *cellVisitor), outputSam);
         }
       }
     //}
