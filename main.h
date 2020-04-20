@@ -46,7 +46,7 @@ void printRead (states_t *states, path_t *path, count_t *counts, char *quality, 
   //printf("Printing read\n");
   //printPath(path); fflush(stdout);
   //printStates(states, path->depth+1); fflush(stdout);
-  writeQname(outputSam, counts);
+  setCountsSam(outputSam, counts);
   outputSam->isBackwardSet = false;
   //printf("depth: %zu/%zu, # states: %zu, nErrors: %u, Seq: %s, qual: %s\n", depth, path->maxDepth, nStates, nErrors, seq, qual); fflush(stdout);
   //printState(&theseStates[nStates-1], path->depth); fflush(stdout);
@@ -92,7 +92,7 @@ void printRead (states_t *states, path_t *path, count_t *counts, char *quality, 
 /**
  * Map without error
  */
-bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t nErrors, bool oneInsertion) {
+bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t nErrors /*, bool oneInsertion */) {
   assert(depth > 0);
   state_t *previousState;
   //state_t *nextState;
@@ -111,20 +111,22 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
     //printState(previousState, depth);
     //printStates(states, depth); fflush(stdout);
     ++stats->nBwtPerDepth[depth-1];
-    if (goDownBwt(&states->bwtBuffer, previousState, nt, &nextInterval)) {
+    if (goDownBwt(/* &states->bwtBuffer, */ previousState, nt, &nextInterval)) {
       mapFound = true;
       //nextState = addState(states, depth, nErrors);
       //setState(nextState, &nextInterval, MATCH, 0, stateId);
-      addState(states, depth, nErrors, &nextInterval, MATCH, nt, stateId, false);
+      addState(states, depth, nErrors, &nextInterval, MATCH, nt, stateId);
       //printf("Next state is %p\n", nextState);
       //printState(nextState, depth);
       //printStates(states, depth+1); fflush(stdout);
     }
   }
   //printf("    found map: %s\n", mapFound ? "true" : "false"); fflush(stdout);
+  /*
   if (oneInsertion) {
     addHashStates(states, depth, nErrors);
   }
+  */
   return mapFound;
 }
 
@@ -154,7 +156,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
     //printState(state, path->maxDepth);
     // add insertion
     if (! hasTrace(previousState, DELETION)) {
-      addState(states, depth, nErrors, &previousState->interval, INSERTION, 0, stateId, false);
+      addState(states, depth, nErrors, &previousState->interval, INSERTION, 0, stateId);
       stateAdded = true;
       //nextState = addState(states, depth, nErrors);
       //setState(nextState, &previousState->interval, INSERTION, 0, stateId);
@@ -170,11 +172,11 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       ++stats->nBwtPerDepth[depth-1];
       if (nt != path->nucleotides[depth-1]) {
         //addState(states, depth-1, nErrors, &newState);
-        if (goDownBwt(&states->bwtBuffer, previousState, nt, &nextInterval)) {
+        if (goDownBwt(/* &states->bwtBuffer, */ previousState, nt, &nextInterval)) {
           //printState(newState, path->maxDepth);
           //nextState = addState(states, depth, nErrors);
           //setState(nextState, &nextInterval, MISMATCH, nt, stateId);
-          addState(states, depth, nErrors, &nextInterval, MISMATCH, nt, stateId, false);
+          addState(states, depth, nErrors, &nextInterval, MISMATCH, nt, stateId);
           stateAdded = true;
         }
       }
@@ -187,17 +189,17 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       //goDownBwt4Nt(states->bwtBuffer, previousState, nextIntervals);
       for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
         ++stats->nBwtPerDepth[depth];
-        if (goDownBwt(&states->bwtBuffer, previousState, nt, &nextInterval)) {
+        if (goDownBwt(/* &states->bwtBuffer, */ previousState, nt, &nextInterval)) {
           //nextState = addState(states, depth, nErrors);
           //setState(nextState, &nextInterval, DELETION, nt, stateId);
-          addState(states, depth, nErrors, &nextInterval, DELETION, nt, stateId, false);
+          addState(states, depth, nErrors, &nextInterval, DELETION, nt, stateId);
           stateAdded = true;
         }
       }
     }
   }
   // add match
-  if (mapWithoutError(states, depth, path->nucleotides[depth-1], nErrors, false)) {
+  if (mapWithoutError(states, depth, path->nucleotides[depth-1], nErrors)) {
     stateAdded = true;
   }
   //TODO adapth this
@@ -207,7 +209,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
   }
   */
   //states->nStates[depth][nErrors] = simplifyStates(states->states[depth][nErrors], states->nStates[depth][nErrors]);
-  addHashStates(states, depth, nErrors);
+  //addHashStates(states, depth, nErrors);
   return stateAdded;
 }
 
@@ -243,7 +245,7 @@ bool addError (states_t *states, path_t *path) {
 void mapWithErrors (states_t *states, path_t *path) {
   assert(path->depth <= TREE_BASE_SIZE);
   assert(path->depth > 0);
-  mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1], false);
+  mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1]);
   //TODO: Optimize this
   for (unsigned int nErrors = 1; nErrors <= parameters->maxNErrors; ++nErrors) {
     _addError(states, path, nErrors, path->depth);
@@ -669,7 +671,7 @@ bool findBestMapping (states_t *states, path_t *path) {
     return true;
   }
   */
-  if (mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1], true)) {
+  if (mapWithoutError(states, path->depth, path->nucleotides[path->depth-1], states->minErrors[path->depth-1])) {
     //printf("    ... without error\n");
     return true;
   }

@@ -105,7 +105,7 @@ void unsetReadSequence (sw_t *sw) {
 }
 
 //void addReadSequence (sw_t *sw, const tree2_t *tree, const edge2_t *edge) {
-void addReadSequence (sw_t *sw, const tree2_t *tree, const edge_t *edge) {
+void addReadSequence (sw_t *sw, /* const tree2_t *tree, */ const edge_t *edge) {
   //TODO double-check the direction
   //printf("\t\t\tSetting read sequence (%d): ", length);
   //printSequence(sequence, length);

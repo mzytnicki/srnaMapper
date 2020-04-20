@@ -356,9 +356,11 @@ void _printTree (const tree_t *tree, FILE *outFile, uint64_t *readId, char *read
 /**
  * Open/close file, allocate the memory, and call _printTree
  */
-int printTree (char *fileName, const tree_t *tree) {
+void printTree (char *fileName, const tree_t *tree) {
   FILE *outFile = fopen(fileName, "w");
-  if (outFile == NULL) return EXIT_FAILURE;
+  if (outFile == NULL) {
+    exit(EXIT_FAILURE);
+  }
   uint64_t readId = 0;
   char *read = (char *) malloc((tree->depth+1) * sizeof(char));
   read[tree->depth] = 0;
@@ -366,10 +368,9 @@ int printTree (char *fileName, const tree_t *tree) {
   free(read);
   fclose(outFile);
   printf("Done with print tree.\n");
-  return EXIT_SUCCESS;
 }
 
-int readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
+void readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
   FILE *inFile;
   char *line = NULL;
   char *sequence = NULL;
@@ -377,22 +378,22 @@ int readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
   size_t len = 0;
   ssize_t nRead;
   inFile = fopen(fileName, "r");
-  if (inFile == NULL) return EXIT_FAILURE;
+  if (inFile == NULL) exit(EXIT_FAILURE);
   while ((nRead = getline(&line, &len, inFile)) != -1) {
     nRead = getline(&sequence, &len, inFile);
     if (nRead == -1) {
       fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
-      return EXIT_FAILURE;
+      exit(EXIT_FAILURE);
     }
     nRead = getline(&line, &len, inFile);
     if (nRead == -1) {
       fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
-      return EXIT_FAILURE;
+      exit(EXIT_FAILURE);
     }
     nRead = getline(&quality, &len, inFile);
     if (nRead == -1) {
       fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
-      return EXIT_FAILURE;
+      exit(EXIT_FAILURE);
     }
     assert(strlen(sequence) == strlen(quality));
     assert(strlen(sequence) == (unsigned long) nRead);
@@ -407,7 +408,6 @@ int readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
   free(sequence);
   free(quality);
   fclose(inFile);
-  return EXIT_SUCCESS;
 }
 
 /**

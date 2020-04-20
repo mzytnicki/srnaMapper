@@ -39,6 +39,7 @@ void resetBitArray (bit_array_t *bitArray) {
 }
 
 
+/*
 typedef struct {
   state_t     *statesHash;
   size_t      *idUsed;
@@ -50,7 +51,6 @@ typedef struct {
 } states_hash_t;
 
 void initializeStatesHash (states_hash_t *statesHash) {
-  /*
   statesHash->statesHash             = (state_t *) malloc(N_STATES_HASH_SIZE * sizeof(state_t));
   statesHash->idUsed                 = (size_t *)   malloc(N_STATES_HASH_SIZE * sizeof(size_t));
   statesHash->nHashUsed              = 0;
@@ -58,18 +58,17 @@ void initializeStatesHash (states_hash_t *statesHash) {
   statesHash->nStatesVectorAllocated = N_STATES_VECTOR_SIZE;
   statesHash->nStatesVectorUsed      = 0;
   initializeBitArray(&statesHash->isUsed, N_STATES_HASH_SIZE);
-  */
 }
-
+ 
 void freeStatesHash (states_hash_t *statesHash) {
-  /*
   free(statesHash->statesHash);
   free(statesHash->idUsed);
   free(statesHash->statesVector);
   freeBitArray(&statesHash->isUsed);
-  */
 }
+*/
 
+/*
 state_t *addStateToHashVector (states_hash_t *statesHash, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
   state_t *state;
   for (size_t stateId = 0; stateId < statesHash->nStatesVectorUsed; ++stateId) {
@@ -116,7 +115,7 @@ void clearHash (states_hash_t *statesHash) {
   statesHash->nStatesVectorUsed = 0;
   resetBitArray(&statesHash->isUsed);
 }
-
+*/
 
 
 
@@ -143,7 +142,7 @@ typedef struct {
   size_t        depth;
   sw_t          *sw;
   bwt_buffer_t   bwtBuffer;
-  states_hash_t  statesHash;
+  //states_hash_t  statesHash;
 } states_t;
 
 void printStates (const states_t *states, size_t depth) {
@@ -241,8 +240,8 @@ void updateCounts (states_t *states, size_t depth, size_t nErrors, size_t nState
   //return &states->states[nErrors][states->nStatesPerError[nErrors]-1];
 }
 
+/*
 void addHashStates (states_t *states, size_t depth, size_t nErrors) {
-  /*
   assert(depth <= states->depth);
   size_t nNewStates = states->statesHash.nHashUsed + states->statesHash.nStatesVectorUsed;
   size_t offset;
@@ -260,8 +259,8 @@ void addHashStates (states_t *states, size_t depth, size_t nErrors) {
     memcpy(&states->states[nErrors][offset], &states->statesHash.statesVector[stateId], sizeof(state_t));
   }
   clearHash(&states->statesHash);
-  */
 }
+*/
 
 void printBacktrace (states_t *states, int depth, int nErrors, size_t stateId) {
   printf("Backtrace:\n");
@@ -337,13 +336,16 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
   states->nStatesPerPosition[depth] -= previousNStates - nextNStates;
 }
 
-state_t *addState (states_t *states, size_t depth, size_t nErrors, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState, bool directAdd) {
+state_t *addState (states_t *states, size_t depth, size_t nErrors, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
+  return _addState(states, depth, nErrors, interval, trace, nucleotide, previousState);
+  /*
   directAdd = true;
   ++stats->nTentativeStateInsertions;
   if (directAdd) {
     return _addState(states, depth, nErrors, interval, trace, nucleotide, previousState);
   }
   return addStateToHash(&states->statesHash, interval, trace, nucleotide, previousState);
+  */
 }
 
 void clearStates (states_t *states) {
@@ -354,7 +356,7 @@ void clearStates (states_t *states) {
     states->maxErrors[depth] = SIZE_MAX;
   }
   bwtinterval_t interval = {0, bwt->seq_len};
-  addState(states, 0, 0, &interval, 0, 0, 0, true);
+  addState(states, 0, 0, &interval, 0, 0, 0);
 }
 
 states_t *initializeStates(size_t treeSize) {
@@ -389,7 +391,7 @@ states_t *initializeStates(size_t treeSize) {
   clearStates(states);
   createSW(states->sw, states->depth);
   //createBwtBuffer(&states->bwtBuffer);
-  initializeStatesHash(&states->statesHash);
+  //initializeStatesHash(&states->statesHash);
   return states;
 }
 
@@ -470,7 +472,7 @@ void freeStates(states_t *states) {
   free(states->nStatesPerPosition);
   free(states->minErrors);
   free(states->maxErrors);
-  freeStatesHash(&states->statesHash);
+  //freeStatesHash(&states->statesHash);
   freeSW(states->sw);
   free(states->sw);
   free(states);

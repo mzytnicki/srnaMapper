@@ -17,7 +17,7 @@
  */
 typedef struct {
   tree2_t         *tree;
-  FILE            *samFile;
+  FILE           **samFiles;
   pthread_mutex_t *incMutex;
   pthread_mutex_t *writeMutex;
 } threadParameters_t;
@@ -57,7 +57,7 @@ void *threadMain (void *parametersVoid) {
   uint32_t            lastCellId;
   cellVisitor_t cellVisitor;
   outputSam_t   outputSam;
-  outputSam.file = parameters->samFile;
+  outputSam.outputFiles = parameters->samFiles;
   createOutputSam(&outputSam, parameters->tree->depth, parameters->writeMutex);
   updateBounds(&firstCellId, &lastCellId, parameters->incMutex);
   clearCellVisitor(&cellVisitor);
@@ -83,7 +83,7 @@ void *threadMain (void *parametersVoid) {
   return NULL;
 }
 
-void startThreads (tree2_t *tree, FILE *samFile) {
+void startThreads (tree2_t *tree, FILE **samFiles) {
   pthread_mutex_t incMutex   = PTHREAD_MUTEX_INITIALIZER;
   pthread_mutex_t writeMutex = PTHREAD_MUTEX_INITIALIZER;
   thread_t threads;
@@ -98,7 +98,7 @@ void startThreads (tree2_t *tree, FILE *samFile) {
   }
   initializeThreads(&threads);
   threadParameters.tree       =  tree;
-  threadParameters.samFile    =  samFile;
+  threadParameters.samFiles   =  samFiles;
   threadParameters.incMutex   = &incMutex;
   threadParameters.writeMutex = &writeMutex;
   threadStep = 0;

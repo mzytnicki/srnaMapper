@@ -108,7 +108,7 @@ bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short 
 }
 */
 
-bool goDownBwt (bwt_buffer_t *bwtBuffer, state_t *previousState, unsigned short nucleotide, bwtinterval_t *newInterval) {
+bool goDownBwt (/*bwt_buffer_t *bwtBuffer, */ state_t *previousState, unsigned short nucleotide, bwtinterval_t *newInterval) {
   /*
   bwtinterval_t *bufferedInterval = findInBwtBuffer(bwtBuffer, previousState->interval, nucleotide);
   if (bufferedInterval != NULL) {

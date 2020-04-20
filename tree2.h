@@ -80,7 +80,7 @@ void clearCellVisitor (cellVisitor_t *cellVisitor) {
   *cellVisitor = 0;
 }
 
-void createCellInfos (cellInfos_t *cellInfos, size_t nInfos, size_t readSize, size_t nSamples) {
+void createCellInfos (cellInfos_t *cellInfos, size_t nInfos /* , size_t readSize, size_t nSamples */) {
   cellInfos->nAllocatedCellInfos = nInfos;
   cellInfos->nCellInfos          = 0;
   cellInfos->cellIds             = (uint32_t *) malloc((nInfos+1) * sizeof(uint32_t));  
@@ -98,7 +98,7 @@ void freeCellInfos (cellInfos_t *cellInfos) {
   free(cellInfos->counts);
 }
 
-void addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t readSize, count_t *counts, unsigned int nSamples) {
+void addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t readSize, count_t *counts /*, unsigned int nSamples */) {
   assert(cellInfos->nCellInfos < cellInfos->nAllocatedCellInfos);
   //printf("Setting cell info #%" PRIu32 "\n", cellId);
   cellInfos->cellIds[cellInfos->nCellInfos] = cellId;
@@ -252,7 +252,7 @@ void createTree2 (tree2_t *tree, size_t depth, uint32_t nCells, uint32_t nEdges,
   tree->edgeSequenceAllocated = EDGE_SEQ_ALLOC;
   tree->edgeSequence = (char *) calloc(tree->edgeSequenceAllocated, sizeof(char));
   */
-  createCellInfos(&tree->cellInfos, nQualities, tree->depth, parameters->nReadsFiles);
+  createCellInfos(&tree->cellInfos, nQualities);
 }
 
 void freeTree2 (tree2_t *tree) {
@@ -399,7 +399,7 @@ void _copyTree (tree2_t *tree2, uint32_t cellId2, const tree_t *tree, uint64_t c
   uint32_t edgeId2, newCellId2;
   unsigned short childId = 0;
   if ((quality = findQuality(&tree->qualities, cellId)) != NULL) {
-    addCellInfo(&tree2->cellInfos, cellId2, quality, depth, cell->counts, parameters->nReadsFiles);
+    addCellInfo(&tree2->cellInfos, cellId2, quality, depth, cell->counts);
   }
   //printf("  Copying cell %" PRIu64 " to %" PRIu32 "/%" PRIu32 "\n", cellId, cellId2, tree2->nAllocatedCells);
   for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {

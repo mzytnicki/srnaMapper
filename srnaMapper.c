@@ -63,7 +63,6 @@
 
 
 int main(int argc, char const ** argv) {
-  int returnCode = 0;
   parameters_t param;
   stats_t stat;
   tree_t tree;
@@ -73,14 +72,12 @@ int main(int argc, char const ** argv) {
   nReads = 0;
   parameters = &param;
   stats = &stat;
-  returnCode = parseCommandLine(argc, argv);
-  if (returnCode != EXIT_SUCCESS) return returnCode;
+  parseCommandLine(argc, argv);
   initializeStats();
   createTree(&tree);
   for (unsigned int fileId = 0; fileId < parameters->nReadsFiles; ++fileId) {
     printf("Reading reads file %s...\n", parameters->readsFileNames[fileId]);
-    returnCode = readReadsFile(parameters->readsFileNames[fileId], &tree, fileId);
-    if (returnCode != EXIT_SUCCESS) return returnCode;
+    readReadsFile(parameters->readsFileNames[fileId], &tree, fileId);
     puts("... done.");
   }
   puts("Filtering tree...");
@@ -90,8 +87,7 @@ int main(int argc, char const ** argv) {
   computeTreeStats(&tree);
   if (parameters->outputReadsFileName != NULL) {
     puts("Printing tree...");
-    returnCode = printTree(parameters->outputReadsFileName, &tree);
-    if (returnCode != EXIT_SUCCESS) return returnCode;
+    printTree(parameters->outputReadsFileName, &tree);
     puts("... done.");
   }
   puts("Simplifying tree...");
@@ -107,15 +103,16 @@ int main(int argc, char const ** argv) {
   pac = idx->pac;
   bwt = idx->bwt;
   bns = idx->bns;
-  FILE *outputSamFile = openSamFile();
-  if (outputSamFile == NULL) {
-    printf("Error!  Cannot write to output SAM file '%s'.\nExiting.\n", param.outputSamFileName);
-  }
+  FILE **outputSamFiles = (FILE **) malloc(parameters->nOutputFileNames * sizeof(FILE *));
+  openSamFiles(outputSamFiles);
   //outputSam.file = outputSamFile;
   //createOutputSam(&outputSam, tree2.depth);
   //map(&tree2, &outputSam);
-  startThreads(&tree2, outputSamFile);
-  fclose(outputSamFile);
+  startThreads(&tree2, outputSamFiles);
+  for (unsigned int fileId = 0; fileId < parameters->nOutputFileNames; ++fileId) {
+    fclose(outputSamFiles[fileId]);
+  }
+  free(outputSamFiles);
   freeTree2(&tree2);
   //freeOutputSam(&outputSam);
   freeParameters(parameters);
