@@ -51,6 +51,7 @@
 #include "cell.h"
 #include "quality.h"
 #include "tree.h"
+#include "fastq.h"
 #include "bwt.h"
 #include "state.h"
 #include "sw.h"

@@ -47,7 +47,9 @@ edge_t *getFirstEdge (cell_t *cell) {
 }
 
 /**
- * Split an edge into two.  Add the remaining part of the edge to a new cell.
+ * Split an edge into two.
+ * The current edge keeps the first part of the sequence.
+ * The remaining part of the edge goes to a new cell.
  * When newEdgeId == N_NUCLEOTIDES, the nucleotide at the split point is not known
  */
 void splitEdge (edge_t *edge, cell_t *newCell, uint64_t newCellId, sequence_t length, unsigned short newEdgeId) {

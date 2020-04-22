@@ -157,7 +157,8 @@ uint64_t addCell (tree_t *tree) {
 }
 
 /**
- * Create a new node, split an edge into two, and add the remaining part of the edge to then new cell.
+ * Create a new node, split an edge into two, and add the remaining part of the edge to the new cell.
+ * The current edge keeps the first part of the sequence.
  */
 uint64_t splitEdgeTree (tree_t *tree, edge_t *edge, sequence_t length, unsigned short newEdgeId) {
   uint64_t newCellId = addCell(tree);
@@ -370,46 +371,6 @@ void printTree (char *fileName, const tree_t *tree) {
   printf("Done with print tree.\n");
 }
 
-void readReadsFile (char *fileName, tree_t *tree, unsigned int fileId) {
-  FILE *inFile;
-  char *line = NULL;
-  char *sequence = NULL;
-  char *quality = NULL;
-  size_t len = 0;
-  ssize_t nRead;
-  inFile = fopen(fileName, "r");
-  if (inFile == NULL) exit(EXIT_FAILURE);
-  while ((nRead = getline(&line, &len, inFile)) != -1) {
-    nRead = getline(&sequence, &len, inFile);
-    if (nRead == -1) {
-      fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
-      exit(EXIT_FAILURE);
-    }
-    nRead = getline(&line, &len, inFile);
-    if (nRead == -1) {
-      fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
-      exit(EXIT_FAILURE);
-    }
-    nRead = getline(&quality, &len, inFile);
-    if (nRead == -1) {
-      fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
-      exit(EXIT_FAILURE);
-    }
-    assert(strlen(sequence) == strlen(quality));
-    assert(strlen(sequence) == (unsigned long) nRead);
-    trimSequence(nRead, sequence);
-    trimSequence(nRead, quality);
-    ++stats->nReads;
-    if (! addSequence(tree, nRead-1, sequence, quality, fileId)) {
-      ++stats->nShortReads;
-    }
-  }
-  free(line);
-  free(sequence);
-  free(quality);
-  fclose(inFile);
-}
-
 /**
  * Count the 3-mer, and possibly filter
  */
@@ -495,6 +456,75 @@ unsigned int filterTree (const tree_t *tree) {
   count_t tripletCount [N_TRIPLETS];
   for (unsigned int i = 0; i < N_TRIPLETS; ++i) tripletCount[i] = 0;
   return _filterTree(tree, 0, 0, 0, tripletCount);
+}
+
+/**
+ * Alter the edges so that they are comparable: either one is empty, or they should be equal.
+ */
+void mergeTreeEdge (tree_t *tree1, edge_t *edge1, tree_t *tree2, edge_t *edge2) {
+  unsigned int sequenceId;
+  // first case: the first edge is empty
+  if (! isSetEdge(edge1)) {
+    edge1->length   = edge2->length;
+    edge1->sequence = edge2->sequence;
+    edge1->cellId   = addCell(tree1);
+    return;
+  }
+  // go the first nucleotide which differs
+  for (sequenceId = 0; (sequenceId < MIN(edge1->length, edge2->length)) && (getEdgeNucleotide(edge1, sequenceId) != getEdgeNucleotide(edge2, sequenceId)); ++sequenceId) {
+    // do nothing
+  }
+  // split the edges
+  if (sequenceId != edge1->length) {
+    splitEdgeTree(tree1, edge1, sequenceId, N_NUCLEOTIDES);
+  }
+  if (sequenceId != edge2->length) {
+    splitEdgeTree(tree2, edge2, sequenceId, N_NUCLEOTIDES);
+  }
+}
+
+/**
+ * Add the counts of the second tree to the first.
+ * Merge the qualities.
+ */
+void mergeTreeNodes (tree_t *tree1, uint64_t cellId1, tree_t *tree2, uint64_t cellId2) {
+  cell_t *cell1 = &tree1->cells[cellId1];
+  cell_t *cell2 = &tree2->cells[cellId2];
+  char *quality1 = findQuality(&tree1->qualities, cellId1);
+  char *quality2 = findQuality(&tree2->qualities, cellId2);
+  for (size_t countId = 0; countId < parameters->nReadsFiles; ++countId) {
+    cell1->counts[countId] += cell2->counts[countId];
+  }
+  mergeQualities(quality1, quality2, strlen(quality1));
+}
+
+/**
+ * Add the second tree to the first.
+ * Merge nodes and proceed to the children edges.
+ */
+void _mergeTree (tree_t *tree1, uint64_t cellId1, tree_t *tree2, uint64_t cellId2) {
+  edge_t *edge1, *edge2;
+  cell_t *cell1 = &tree1->cells[cellId1];
+  cell_t *cell2 = &tree2->cells[cellId2];
+  mergeTreeNodes(tree1, cellId1, tree2, cellId2);
+  for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
+    edge2 = &cell2->edges[nucleotide];
+    if (isSetEdge(edge1)) {
+      edge1 = &cell1->edges[nucleotide];
+      mergeTreeEdge(tree2, edge1, tree2, edge2);
+      _mergeTree(tree2, edge1->cellId, tree2, edge2->cellId);
+    }
+  }
+}
+
+/**
+ * Add the second tree to the first
+ * Here, simply do it on all the sub-trees.
+ */
+void mergeTree (tree_t *tree1, tree_t *tree2) {
+  for (uint64_t i = 0; i < N_TREE_BASE; ++i) {
+    _mergeTree(tree1, i, tree2, i);
+  }
 }
 
 bwaidx_t *loadGenomeFile (char *indexName) {

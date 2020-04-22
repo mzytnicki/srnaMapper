@@ -70,13 +70,18 @@ void addQuality (quality_t *qualities, uint64_t cellId, size_t l, char *quality)
   qualities->qualities[cellId] = strndup(quality, l);
 }
 
+void mergeQualities (char *quality1, const char *quality2, size_t l) {
+  assert(strlen(quality1) == strlen(quality2));
+  assert(strlen(quality1) == l);
+  for (size_t i = 0; i < l; ++i) {
+    quality1[i] = MAX(quality1[i], quality2[i]);
+  }
+}
+
 void replaceQuality (quality_t *qualities, uint32_t qualityId, size_t l, char *quality) {
   //printf("Quality: %zu vs %zu\n", strlen(qualities->qualities[qualityId]), strlen(quality));
-  assert(strlen(qualities->qualities[qualityId]) == strlen(quality));
   assert(strlen(quality) == l);
-  for (size_t i = 0; i < l; ++i) {
-    qualities->qualities[qualityId][i] = MAX(qualities->qualities[qualityId][i], quality[i]);
-  }
+  mergeQualities(qualities->qualities[qualityId], quality, l);
 }
 
 void _setQuality (quality_t *qualities, uint64_t cellId, size_t l, char *quality) {
@@ -88,5 +93,6 @@ void _setQuality (quality_t *qualities, uint64_t cellId, size_t l, char *quality
     replaceQuality(qualities, qualityId, l, quality);
   }
 }
+
 
 #endif
