@@ -462,24 +462,46 @@ unsigned int filterTree (const tree_t *tree) {
  * Alter the edges so that they are comparable: either one is empty, or they should be equal.
  */
 void mergeTreeEdge (tree_t *tree1, edge_t *edge1, tree_t *tree2, edge_t *edge2) {
+  //printf("Merging edge ");
+  //printEdge(edge1);
+  //printf(" with ");
+  //printEdge(edge2);
+  //printf("\n"); fflush(stdout);
   unsigned int sequenceId;
   // first case: the first edge is empty
   if (! isSetEdge(edge1)) {
+    ++tree1->nEdges;
     edge1->length   = edge2->length;
     edge1->sequence = edge2->sequence;
     edge1->cellId   = addCell(tree1);
+    //printf("First case: ");
+    //printEdge(edge1);
+    //printf("\n"); fflush(stdout);
     return;
   }
   // go the first nucleotide which differs
-  for (sequenceId = 0; (sequenceId < MIN(edge1->length, edge2->length)) && (getEdgeNucleotide(edge1, sequenceId) != getEdgeNucleotide(edge2, sequenceId)); ++sequenceId) {
+  for (sequenceId = 0; (sequenceId < MIN(edge1->length, edge2->length)) && (getEdgeNucleotide(edge1, sequenceId) == getEdgeNucleotide(edge2, sequenceId)); ++sequenceId) {
     // do nothing
   }
+  assert(sequenceId != 0);
+  //printf("break point is %u\n", sequenceId); fflush(stdout);
   // split the edges
   if (sequenceId != edge1->length) {
+    ++tree1->nEdges;
     splitEdgeTree(tree1, edge1, sequenceId, N_NUCLEOTIDES);
+    //printf("splitting edge 1: ");
+    //printEdge(edge1);
+    //printf("\n");
+    //printCell(&tree1->cells[edge1->cellId]);
+    //printf("\n"); fflush(stdout);
   }
   if (sequenceId != edge2->length) {
     splitEdgeTree(tree2, edge2, sequenceId, N_NUCLEOTIDES);
+    //printf("splitting edge 2: "); fflush(stdout);
+    //printEdge(edge2);
+    //printf("\n");
+    //printCell(&tree2->cells[edge2->cellId]);
+    //printf("\n"); fflush(stdout);
   }
 }
 
@@ -495,6 +517,13 @@ void mergeTreeNodes (tree_t *tree1, uint64_t cellId1, tree_t *tree2, uint64_t ce
   for (size_t countId = 0; countId < parameters->nReadsFiles; ++countId) {
     cell1->counts[countId] += cell2->counts[countId];
   }
+  if (quality2 == NULL) {
+    return;
+  }
+  if (quality1 == NULL) {
+    addQuality(&tree1->qualities, cellId1, strlen(quality2), quality2);
+    return;
+  }
   mergeQualities(quality1, quality2, strlen(quality1));
 }
 
@@ -503,16 +532,22 @@ void mergeTreeNodes (tree_t *tree1, uint64_t cellId1, tree_t *tree2, uint64_t ce
  * Merge nodes and proceed to the children edges.
  */
 void _mergeTree (tree_t *tree1, uint64_t cellId1, tree_t *tree2, uint64_t cellId2) {
-  edge_t *edge1, *edge2;
   cell_t *cell1 = &tree1->cells[cellId1];
   cell_t *cell2 = &tree2->cells[cellId2];
+  edge_t *edge1, *edge2;
+  //printf("Merge tree %"PRIu64" (%p) vs %"PRIu64" (%p)\n", cellId1, cell1, cellId2, cell2); fflush(stdout);
+  //printf("Node 1: ");
+  //printCell(cell1);
+  //printf("\nNode 2: ");
+  //printCell(cell2);
+  //printf("\n"); fflush(stdout);
   mergeTreeNodes(tree1, cellId1, tree2, cellId2);
   for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
     edge2 = &cell2->edges[nucleotide];
-    if (isSetEdge(edge1)) {
+    if (isSetEdge(edge2)) {
       edge1 = &cell1->edges[nucleotide];
-      mergeTreeEdge(tree2, edge1, tree2, edge2);
-      _mergeTree(tree2, edge1->cellId, tree2, edge2->cellId);
+      mergeTreeEdge(tree1, edge1, tree2, edge2);
+      _mergeTree(tree1, edge1->cellId, tree2, edge2->cellId);
     }
   }
 }
@@ -525,6 +560,7 @@ void mergeTree (tree_t *tree1, tree_t *tree2) {
   for (uint64_t i = 0; i < N_TREE_BASE; ++i) {
     _mergeTree(tree1, i, tree2, i);
   }
+  tree1->depth = MAX(tree1->depth, tree2->depth);
 }
 
 bwaidx_t *loadGenomeFile (char *indexName) {

@@ -68,7 +68,7 @@ int main(int argc, char const ** argv) {
   stats_t stat;
   tree_t tree;
   tree2_t tree2;
-  //outputSam_t outputSam;
+  thread_t threads;
   bwaidx_t *idx = NULL;
   nReads = 0;
   parameters = &param;
@@ -76,11 +76,12 @@ int main(int argc, char const ** argv) {
   parseCommandLine(argc, argv);
   initializeStats();
   createTree(&tree);
-  for (unsigned int fileId = 0; fileId < parameters->nReadsFiles; ++fileId) {
-    printf("Reading reads file %s...\n", parameters->readsFileNames[fileId]);
-    readReadsFile(parameters->readsFileNames[fileId], &tree, fileId);
-    puts("... done.");
-  }
+  createThreads(&threads);
+  FILE **inputFastqFiles = (FILE **) malloc(parameters->nReadsFiles * sizeof(FILE *));
+  openFastqFiles(inputFastqFiles);
+  startReadingThreads(&threads, &tree, inputFastqFiles);
+  closeFastqFiles(inputFastqFiles);
+  free(inputFastqFiles);
   puts("Filtering tree...");
   filterTree(&tree);
   printf("... done.\n");
@@ -109,10 +110,9 @@ int main(int argc, char const ** argv) {
   //outputSam.file = outputSamFile;
   //createOutputSam(&outputSam, tree2.depth);
   //map(&tree2, &outputSam);
-  startThreads(&tree2, outputSamFiles);
-  for (unsigned int fileId = 0; fileId < parameters->nOutputFileNames; ++fileId) {
-    fclose(outputSamFiles[fileId]);
-  }
+  startMappingThreads(&threads, &tree2, outputSamFiles);
+  closeSamFiles(outputSamFiles);
+  freeThreads(&threads);
   free(outputSamFiles);
   freeTree2(&tree2);
   //freeOutputSam(&outputSam);
