@@ -32,6 +32,11 @@ typedef struct {
 } mappingThreadParameters_t;
 
 typedef struct {
+  tree_t *tree1;
+  tree_t *tree2;
+} mergeThreadParameters_t;
+
+typedef struct {
   pthread_t *threads;
 } thread_t;
 
@@ -51,6 +56,43 @@ void updateBounds (uint64_t *firstCellId, uint64_t *lastCellId, unsigned long st
   *lastCellId  = (threadStep + 1) * step - 1;
   ++threadStep;
   pthread_mutex_unlock(incMutex);
+}
+
+void *mergingThreadMain (void *parametersVoid) {
+  mergeThreadParameters_t *parameters  = (mergeThreadParameters_t *) parametersVoid;
+  mergeTree(parameters->tree1, parameters->tree2);
+  return NULL;
+}
+
+void startMergingThreads (thread_t *threads, tree_t *mainTree, tree_t *otherTrees) {
+  unsigned int nTrees = parameters->nThreads;
+  unsigned int nMerges = nTrees / 2;
+  mergeThreadParameters_t *threadParameters = (mergeThreadParameters_t *) malloc(nMerges * sizeof(mergeThreadParameters_t));
+  tree_t **allTrees = (tree_t **) malloc((parameters->nThreads) * sizeof(tree_t *));
+  for (unsigned int threadId = 0; threadId < parameters->nThreads-1; ++threadId) {
+    allTrees[threadId+1] = &otherTrees[threadId];
+  }
+  allTrees[0] = mainTree;
+  while (nTrees != 1) {
+    for (unsigned int threadId = 0; threadId < nMerges; ++threadId) {
+      threadParameters[threadId].tree1 = allTrees[threadId*2];
+      threadParameters[threadId].tree2 = allTrees[threadId*2+1];
+      if (pthread_create(&threads->threads[threadId], NULL, mergingThreadMain, (void *) &threadParameters[threadId]) != 0) {
+        fprintf(stderr, "Error!  Thread %u cannot be created.\nExiting.\n", threadId);
+        exit(EXIT_FAILURE);
+      }
+    }
+    for (unsigned int threadId = 0; threadId < nMerges; ++threadId) {
+      pthread_join(threads->threads[threadId], NULL); 
+    }
+    nTrees = nMerges + (nTrees & 1);
+    for (unsigned int threadId = 0; threadId < nTrees; ++threadId) {
+      allTrees[threadId] = allTrees[2*threadId];
+    }
+    nMerges = nTrees / 2;
+  }
+  free(allTrees);
+  free(threadParameters);
 }
 
 void *readingThreadMain (void *parametersVoid) {
@@ -114,11 +156,16 @@ void startReadingThreads (thread_t *threads, tree_t *tree, FILE **fastqFiles) {
     fprintf(stderr, "... done.\n");
   }
   // merge all trees to the main tree
+  if (parameters->nThreads > 1) {
+    startMergingThreads (threads, tree, trees);
+  }
   // TODO: Do it in parallel
+  /*
   for (unsigned int threadId = 0; threadId < parameters->nThreads-1; ++threadId) {
     mergeTree(tree, &trees[threadId]);
     freeTree(&trees[threadId]);
   }
+  */
   free(trees);
   free(threadParameters);
   pthread_mutex_destroy(&incMutex);
