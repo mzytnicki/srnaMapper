@@ -18,7 +18,6 @@ typedef struct {
   char        *quality;
   unsigned int nHits;
   unsigned int hitId;
-  unsigned int mapq;
   unsigned int nErrors;
 } samLine_t;
 
@@ -73,12 +72,11 @@ void copyToSamLine (samLine_t *samLine, size_t nCounts, count_t *counts, unsigne
   samLine->nHits   = nHits;
   samLine->hitId   = hitId;
   samLine->nErrors = nErrors;
-  samLine->mapq    = computeMapq(nHits, nErrors);
 } 
 
 
 void printSamTailLine (FILE *file, samLine_t *samLine) {
-  fprintf(file, "\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%u\tHI:i:%u\tIH:i:%u\tNM:i:%u\n", samLine->flag, (samLine->rid == -1)? "*": bns->anns[samLine->rid].name, samLine->pos, samLine->mapq, samLine->cigar, samLine->sequence, samLine->quality, samLine->nHits, samLine->hitId, samLine->nHits, samLine->nErrors);
+  fprintf(file, "\t%u\t%s\t%" PRId64 "\t%d\t%s\t*\t0\t0\t%s\t%s\tNH:i:%u\tHI:i:%u\tIH:i:%u\tNM:i:%u\n", samLine->flag, (samLine->rid == -1)? "*": bns->anns[samLine->rid].name, samLine->pos, computeMapq(samLine->nHits, samLine->nErrors), samLine->cigar, samLine->sequence, samLine->quality, samLine->nHits, samLine->hitId, samLine->nHits, samLine->nErrors);
 }
 
 void printSamLineUnique (FILE *file, samLine_t *samLine) {
@@ -208,8 +206,8 @@ void computeReverseComplement (outputSam_t *outputSam) {
 /**
  * Print all the SAM buffers to the output file
  */
-void writeToSam (outputSam_t *outputSam) {
-  if (outputSam->nSamLines < N_SAM_DUMP_THRESHOLD) {
+void writeToSam (outputSam_t *outputSam, bool compulsory) {
+  if ((! compulsory) && (outputSam->nSamLines < N_SAM_DUMP_THRESHOLD)) {
     return;
   }
   if (pthread_mutex_lock(outputSam->writeMutex) != 0) {
@@ -287,7 +285,7 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
   }
   */
   outputSam->nSamLines = samLineOffset + nNewLines;
-  writeToSam(outputSam);
+  writeToSam(outputSam, false);
 }
 
 /**
@@ -306,7 +304,7 @@ void addSamLine (outputSam_t *outputSam, unsigned int flag, int rid, int64_t pos
  */
 void printReadLineManyHits (char *seq, char *qual, bwtint_t nHits, unsigned int nErrors, outputSam_t *outputSam) {
   addSamLine(outputSam, 4, -1, 0, nHits, 0, nErrors, "*", seq, qual);
-  writeToSam(outputSam);
+  writeToSam(outputSam, false);
 }
 
 /**
@@ -341,7 +339,7 @@ void printReadUniqueNoError (int strand, int rid, int64_t pos, size_t readLength
   }
   printReadLine(strand != 0, flag, rid, pos, 1, 1, 0, outputSam);
   //fprintf(outputSamFile, "%s\t%u\t%s\t%" PRId64 "\t40\t%zuM\t*\t0\t0\t%s\t%s\tNH:i:1\tHI:i:1\tIH:i:1\tNM:i:0\n", qname, flag, chrName, pos, readLength, seq, qual);
-  writeToSam(outputSam);
+  writeToSam(outputSam, false);
 }
 
 /**

@@ -691,7 +691,7 @@ bool findBestMapping (states_t *states, path_t *path) {
 void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *cellVisitor, uint32_t firstCellId, uint32_t lastCellId, outputSam_t *outputSam) {
   bool mappable = true;
   while (true) {
-    //printPath(path); fflush(stdout);
+    //if (path->depth > TREE_BASE_SIZE) printPath(path);
     //printf("%" PRIu32 ": ", path->cellIds[path->nCells]);
     //printCell2(&tree->cells[path->cellIds[path->nCells]]);
     //printf("\n");
@@ -704,13 +704,13 @@ void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *c
     else {
       */
       // advance in the tree
-      //printf("Going to next tree\n");
+      //if (path->depth > TREE_BASE_SIZE) printf("Going to next tree\n");
       if (! goNextTree2(tree, states, path, firstCellId, lastCellId, mappable)) {
         return;
       }
       // prefix of the read is not mappable
       mappable = findBestMapping(states, path);
-      //printf("\tRead is mappable: %s\n", (mappable)? "yes": "no");
+      //if (path->depth > TREE_BASE_SIZE) printf("\tRead is mappable: %s\n", (mappable)? "yes": "no");
       if ((path->depth >= TREE_BASE_SIZE) && (mappable) && (path->edgeLength == 0)) {
         //if ((cellInfo = getCellInfoTree(path->cellIds[path->nCells], cellVisitor)) != NULL) {
         if (getCellInfoTree(tree, path->cellIds[path->nCells], cellVisitor)) {
@@ -719,6 +719,7 @@ void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *c
       }
     //}
   }
+  writeToSam(outputSam, true);
 }
 
 /**

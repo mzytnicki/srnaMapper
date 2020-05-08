@@ -159,13 +159,9 @@ void startReadingThreads (thread_t *threads, tree_t *tree, FILE **fastqFiles) {
   if (parameters->nThreads > 1) {
     startMergingThreads (threads, tree, trees);
   }
-  // TODO: Do it in parallel
-  /*
   for (unsigned int threadId = 0; threadId < parameters->nThreads-1; ++threadId) {
-    mergeTree(tree, &trees[threadId]);
     freeTree(&trees[threadId]);
   }
-  */
   free(trees);
   free(threadParameters);
   pthread_mutex_destroy(&incMutex);
@@ -196,7 +192,7 @@ void *mappingThreadMain (void *parametersVoid) {
     clearStates(states);
     clearPath(path);
     _map(parameters->tree, states, path, &cellVisitor, firstCellId, lastCellId, &outputSam);
-    writeToSam(&outputSam);
+    writeToSam(&outputSam, true);
     //printf("Ending thread %" PRIu32 "-%" PRIu32 " at depth %zu with cell #%" PRIu32 "\n", parameters->firstCellId, parameters->lastCellId, path->nCells, path->cellIds[path->nCells]); fflush(stdout);
     updateBounds(&firstCellId, &lastCellId, THREAD_CELLID_STEP, parameters->incMutex);
   }
