@@ -102,9 +102,6 @@ void printSamLineMultiple (FILE *file, samLine_t *samLine, unsigned int fileId, 
   }
 }
 
-#define N_SAM_LINES          0x200
-#define N_SAM_DUMP_THRESHOLD 0x100
-
 typedef struct {
   FILE            **outputFiles;
   count_t          *counts;

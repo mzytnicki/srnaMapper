@@ -81,6 +81,8 @@
 #define N_STATES_HASH_SIZE   0x10000
 #define N_STATES_VECTOR_SIZE 0x1000
 
+#define N_SAM_LINES          0x2000
+#define N_SAM_DUMP_THRESHOLD 0x1000
 
 typedef uint32_t count_t;
 

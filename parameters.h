@@ -120,6 +120,10 @@ void parseCommandLine (int argc, char const **argv) {
     printf("The number of input files (%u) and output files (%u) differ.\nExiting.\n", parameters->nReadsFiles, parameters->nOutputFileNames);
     exit(EXIT_FAILURE);
   }
+  if (parameters->maxNHits >= N_SAM_DUMP_THRESHOLD) {
+    printf("Error, the number of hits (%u) should be less than %i (mostly because the coder is too lazy).\nExiting.\n", parameters->maxNHits, N_SAM_DUMP_THRESHOLD);
+    exit(EXIT_FAILURE);
+  }
 }
 
 void freeParameters(parameters_t *p) {
