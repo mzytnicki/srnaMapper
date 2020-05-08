@@ -51,7 +51,7 @@ unsigned int computeMapq (unsigned int nHits, unsigned int nErrors) {
 }
 
 void printSamLine (const samLine_t *samLine) {
-  printf("%s (%p) pos %i:%"PRId64" %u/%u hits, counts:", samLine->sequence, samLine, samLine->rid, samLine->pos, samLine->hitId, samLine->nHits);
+  printf("%s (%p, %p) pos %i:%"PRId64" %u/%u hits, counts:", samLine->sequence, samLine, samLine->sequence, samLine->rid, samLine->pos, samLine->hitId, samLine->nHits);
   for (unsigned int i = 0; i < parameters->nReadsFiles; ++i) {
     printf(" %u", samLine->counts[i]);
   }
@@ -72,6 +72,8 @@ void copyToSamLine (samLine_t *samLine, size_t nCounts, count_t *counts, unsigne
   samLine->nHits   = nHits;
   samLine->hitId   = hitId;
   samLine->nErrors = nErrors;
+  //printf("Adding sam line: ");
+  //printSamLine(samLine);
 } 
 
 
@@ -85,6 +87,12 @@ void printSamLineUnique (FILE *file, samLine_t *samLine) {
     fprintf(file, "_%" PRIu32, samLine->counts[readsFileId]);
   }
   printSamTailLine(file, samLine);
+}
+
+void swapSamLines (samLine_t *samLine1, samLine_t *samLine2) {
+  samLine_t tmp = *samLine1;
+  *samLine1 = *samLine2;
+  *samLine2 = tmp;
 }
 
 void printSamLineMultiple (FILE *file, samLine_t *samLine, unsigned int fileId, unsigned long int readId) {
@@ -189,8 +197,8 @@ void computeCigar (outputSam_t *outputSam) {
 }
 
 void setCigarNoError (outputSam_t *outputSam, unsigned int readLength) {
-  sprintf(outputSam->forwardCigar, "%uM", readLength);
-  sprintf(outputSam->backwardCigar, "%uM", readLength);
+  sprintf(outputSam->forwardCigar, "%u=", readLength);
+  sprintf(outputSam->backwardCigar, "%u=", readLength);
 }
 
 /**
@@ -223,6 +231,8 @@ void writeToSam (outputSam_t *outputSam, bool compulsory) {
     for (unsigned int samLineId = 0; samLineId < outputSam->nSamLines; ++samLineId) {
       ++nReads;
       for (unsigned int fileId = 0; fileId < parameters->nReadsFiles; ++fileId) {
+        //printf("printing output: ");
+        //printSamLine(&outputSam->samLines[samLineId]);
         printSamLineMultiple(outputSam->outputFiles[fileId], &outputSam->samLines[samLineId], fileId, nReads);
       }
     }
@@ -264,7 +274,8 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
   for (unsigned int samLineId = 1; samLineId < nLines; ++samLineId, ++samLineCurrent) {
     if ((previousRid != samLineCurrent->rid) || (samLineCurrent->pos - previousPos > parameters->maxNErrors)) {
       if (samLineFree != samLineCurrent) {
-        memcpy(samLineFree, samLineCurrent, sizeof(samLine_t));
+        //memcpy(samLineFree, samLineCurrent, sizeof(samLine_t));
+        swapSamLines(samLineFree, samLineCurrent);
       }
       ++samLineFree;
       ++nNewLines;
