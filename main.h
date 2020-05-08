@@ -70,7 +70,7 @@ void printRead (states_t *states, path_t *path, count_t *counts, char *quality, 
     pos = bwa_sa2pos(bns, bwt, theseStates[0].interval.k, depth, &strand);
     rid = bns_pos2rid(bns, pos);
     pos = pos - bns->anns[rid].offset + 1;
-    printReadUniqueNoError(strand, bns->anns[rid].name, pos, depth, outputSam);
+    printReadUniqueNoError(strand, rid, pos, depth, outputSam);
     return;
   }
   //printf("Read: %s, read length: %zu\n", forwardSeq, readLength);
@@ -87,6 +87,7 @@ void printRead (states_t *states, path_t *path, count_t *counts, char *quality, 
     printReadState(&theseStates[stateId], path->depth, nHits, hitId, nErrors, outputSam);
     hitId += theseStates[stateId].interval.l - theseStates[stateId].interval.k + 1;
   }
+  removeDuplicatesOutputLines(outputSam, nHits);
 }
 
 /**
