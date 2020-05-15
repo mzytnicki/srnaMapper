@@ -422,7 +422,9 @@ void computeBacktrace (states_t *states, int depth, int nErrors, size_t stateId,
   state_t *state;
   char cigar;
   outputSam->backtraceSize = 0;
-  while ((depth >= 0) || (nErrors > 0)) {
+  //printf("Compute BT\n");
+  //while ((depth >= 0) || (nErrors > 0)) {
+  while ((depth > 0) || (nErrors > 0)) {
     state = getState(states, depth, nErrors, stateId);
     //printState(state, 101); fflush(stdout);
     cigar = CIGAR[state->trace];

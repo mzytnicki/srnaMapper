@@ -114,9 +114,8 @@ void addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t
 
 //cellInfo_t *getCellInfo (uint32_t cellId, cellVisitor_t *cellVisitor) {
 bool getCellInfo (const cellInfos_t *cellInfos, uint32_t cellId, cellVisitor_t *cellVisitor) {
-  //printf("Looking for cell info %" PRIu32 "\n", cellId); fflush(stdout);
-  //printf("Current state is %zu -> %" PRIu32 "\n", cellVisitor, cellInfos->cellIds[*cellVisitor]); fflush(stdout);
-  //printf("Current state is %p\n", cellInfos->cellInfos + cellInfos->nCellInfos); fflush(stdout);
+  //printf("Looking for cell info %" PRIu32 ", with visitor %zu and %zu cells\n", cellId, *cellVisitor, cellInfos->nCellInfos); fflush(stdout);
+  //printf("Current state is %zu -> %" PRIu32 "\n", *cellVisitor, cellInfos->cellIds[*cellVisitor]); fflush(stdout);
   /*
   for (; (! isEmptyCellInfo(cellVisitor->currentCellInfo)) && (cellVisitor->currentCellInfo->cellId < cellId); ++cellVisitor->currentCellInfo) {
     //printf("Got %" PRIu32 "\n", cellVisitor->currentCellInfo->cellId); fflush(stdout);
@@ -399,9 +398,10 @@ void _copyTree (tree2_t *tree2, uint32_t cellId2, const tree_t *tree, uint64_t c
   uint32_t edgeId2, newCellId2;
   unsigned short childId = 0;
   if ((quality = findQuality(&tree->qualities, cellId)) != NULL) {
+    //printf("  Adding cell info @ %"PRIu32"\n", cellId2);
     addCellInfo(&tree2->cellInfos, cellId2, quality, depth, cell->counts);
   }
-  //printf("  Copying cell %" PRIu64 " to %" PRIu32 "/%" PRIu32 "\n", cellId, cellId2, tree2->nAllocatedCells);
+  //if (depth > TREE_BASE_SIZE) printf("  Copying cell %" PRIu64 " to %" PRIu32 "/%" PRIu32 "\n", cellId, cellId2, tree2->nAllocatedCells);
   for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
     edge = &cell->edges[nt]; 
     if (isSetEdge(edge)) {

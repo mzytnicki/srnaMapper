@@ -50,10 +50,21 @@ void freeThreads (thread_t *threads) {
   free(threads->threads);
 }
 
-void updateBounds (uint64_t *firstCellId, uint64_t *lastCellId, unsigned long step, pthread_mutex_t *incMutex) {
+void printProgress () {
+  unsigned int progress = threadStep * THREAD_CELLID_STEP * 100 / N_TREE_BASE;
+  if (progress <= 100) {
+    fprintf(stderr, "Progress: %u%%\r", progress);
+  }
+}
+
+
+void updateBounds (uint64_t *firstCellId, uint64_t *lastCellId, unsigned long step, pthread_mutex_t *incMutex, bool mappingStep) {
   pthread_mutex_lock(incMutex);
   *firstCellId = threadStep * step;
   *lastCellId  = (threadStep + 1) * step - 1;
+  if (mappingStep) {
+    printProgress();
+  }
   ++threadStep;
   pthread_mutex_unlock(incMutex);
 }
@@ -100,7 +111,7 @@ void *readingThreadMain (void *parametersVoid) {
   readingThreadParameters_t *parameters  = (readingThreadParameters_t *) parametersVoid;
   uint64_t posStart, posEnd;
   bool stillData = true;
-  updateBounds(&posStart, &posEnd, THREAD_BYTES_STEP, parameters->incMutex);
+  updateBounds(&posStart, &posEnd, THREAD_BYTES_STEP, parameters->incMutex, false);
   while (stillData) {
     //printf("Starting thread %" PRIu32 "-%" PRIu32 ": ", firstCellId, lastCellId);
     //printSequence(firstCellId, TREE_BASE_SIZE);
@@ -110,7 +121,7 @@ void *readingThreadMain (void *parametersVoid) {
     //fflush(stdout);
     stillData = readReadsFile(parameters->fastqFile, parameters->fastqFileName, parameters->tree, parameters->fileId, posStart, posEnd);
     //printf("Ending thread %" PRIu32 "-%" PRIu32 " at depth %zu with cell #%" PRIu32 "\n", parameters->firstCellId, parameters->lastCellId, path->nCells, path->cellIds[path->nCells]); fflush(stdout);
-    updateBounds(&posStart, &posEnd, THREAD_BYTES_STEP, parameters->incMutex);
+    updateBounds(&posStart, &posEnd, THREAD_BYTES_STEP, parameters->incMutex, false);
   }
   return NULL;
 }
@@ -178,7 +189,7 @@ void *mappingThreadMain (void *parametersVoid) {
   outputSam_t                outputSam;
   outputSam.outputFiles = parameters->samFiles;
   createOutputSam(&outputSam, parameters->tree->depth, parameters->writeMutex);
-  updateBounds(&firstCellId, &lastCellId, THREAD_CELLID_STEP, parameters->incMutex);
+  updateBounds(&firstCellId, &lastCellId, THREAD_CELLID_STEP, parameters->incMutex, true);
   clearCellVisitor(&cellVisitor);
   while (firstCellId <= N_TREE_BASE) {
     //printf("Starting thread %" PRIu32 "-%" PRIu32 ": ", firstCellId, lastCellId);
@@ -194,7 +205,7 @@ void *mappingThreadMain (void *parametersVoid) {
     _map(parameters->tree, states, path, &cellVisitor, firstCellId, lastCellId, &outputSam);
     writeToSam(&outputSam, true);
     //printf("Ending thread %" PRIu32 "-%" PRIu32 " at depth %zu with cell #%" PRIu32 "\n", parameters->firstCellId, parameters->lastCellId, path->nCells, path->cellIds[path->nCells]); fflush(stdout);
-    updateBounds(&firstCellId, &lastCellId, THREAD_CELLID_STEP, parameters->incMutex);
+    updateBounds(&firstCellId, &lastCellId, THREAD_CELLID_STEP, parameters->incMutex, true);
   }
   freeOutputSam(&outputSam);
   freeStates(states);
@@ -234,6 +245,7 @@ void startMappingThreads (thread_t *threads, tree2_t *tree, FILE **samFiles) {
   //pthread_exit(NULL);
   pthread_mutex_destroy(&incMutex);
   pthread_mutex_destroy(&writeMutex);
+  fprintf(stderr, "\n");
 }
 
 #endif

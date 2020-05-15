@@ -86,7 +86,7 @@ int main(int argc, char const ** argv) {
   filterTree(&tree);
   printf("... done.\n");
   printf("Maximum read size: %zu\n", tree.depth);
-  computeTreeStats(&tree);
+  //computeTreeStats(&tree);
   if (parameters->outputReadsFileName != NULL) {
     puts("Printing tree...");
     printTree(parameters->outputReadsFileName, &tree);

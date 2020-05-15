@@ -248,8 +248,8 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
   samLine_t *samLineFirst   = outputSam->samLines + samLineOffset;
   samLine_t *samLineFree    = samLineFirst + 1;
   samLine_t *samLineCurrent = samLineFree;
-  int        previousRid;
-  uint64_t   previousPos;
+  int        previousRid, currentRid;
+  uint64_t   previousPos, currentPos;
   if (nLines <= 1) {
     return;
   }
@@ -269,7 +269,15 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
   }
   */
   for (unsigned int samLineId = 1; samLineId < nLines; ++samLineId, ++samLineCurrent) {
-    if ((previousRid != samLineCurrent->rid) || (samLineCurrent->pos - previousPos > parameters->maxNErrors)) {
+    /*
+    printf("Step: previousRid: %i, previousPos: %" PRId64 ", current: %p, free: %p\n", previousRid, previousPos, samLineCurrent, samLineFree);
+    for (unsigned int i = 0; i < nNewLines; ++i) {
+      printSamLine(&outputSam->samLines[samLineOffset+i]);
+    }
+    */
+    currentRid = samLineCurrent->rid;
+    currentPos = samLineCurrent->pos;
+    if ((previousRid != currentRid) || (currentPos - previousPos > parameters->maxNErrors)) {
       if (samLineFree != samLineCurrent) {
         //memcpy(samLineFree, samLineCurrent, sizeof(samLine_t));
         swapSamLines(samLineFree, samLineCurrent);
@@ -277,8 +285,8 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
       ++samLineFree;
       ++nNewLines;
     }
-    previousRid = samLineCurrent->rid;
-    previousPos = samLineCurrent->pos;
+    previousRid = currentRid;
+    previousPos = currentPos;
   }
   if (nNewLines != nLines) {
     for (unsigned int hitId = 0; hitId < nNewLines; ++hitId) {

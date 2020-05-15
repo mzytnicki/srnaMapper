@@ -43,6 +43,7 @@ void printStats () {
   savedLocale = setlocale (LC_ALL, NULL);
   setlocale(LC_NUMERIC, "");
   printf("Very small sequences: %'lu/%'lu\n", stats->nShortReads, stats->nReads);
+  /*
   printf("# max states:");
   for (size_t nErrors = 0; nErrors <= parameters->maxNErrors; ++nErrors) {
     printf(" %'zu: %'zu ", nErrors, stats->maxNStates[nErrors]);
@@ -57,6 +58,7 @@ void printStats () {
       printf("\tDepth %3zu: %'13llu\n", i, stats->nBwtPerDepth[i]);
     }
   }
+  */
   setlocale(LC_ALL, savedLocale);
 }
 

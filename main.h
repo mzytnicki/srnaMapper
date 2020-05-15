@@ -111,7 +111,7 @@ bool mapWithoutError (states_t *states, size_t depth, unsigned short nt, size_t 
     //printf("Previous state with %zu errors, @ depth %zu, id %zu: %p\n", nErrors, depth-1, stateId, previousState);
     //printState(previousState, depth);
     //printStates(states, depth); fflush(stdout);
-    ++stats->nBwtPerDepth[depth-1];
+    //++stats->nBwtPerDepth[depth-1];
     if (goDownBwt(/* &states->bwtBuffer, */ previousState, nt, &nextInterval)) {
       mapFound = true;
       //nextState = addState(states, depth, nErrors);
@@ -170,7 +170,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
       if (nt != path->nucleotides[depth-1]) {
     */
     for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-      ++stats->nBwtPerDepth[depth-1];
+      //++stats->nBwtPerDepth[depth-1];
       if (nt != path->nucleotides[depth-1]) {
         //addState(states, depth-1, nErrors, &newState);
         if (goDownBwt(/* &states->bwtBuffer, */ previousState, nt, &nextInterval)) {
@@ -189,7 +189,7 @@ bool _addError (states_t *states, path_t *path, size_t nErrors, size_t depth) {
     if (! hasTrace(previousState, INSERTION)) {
       //goDownBwt4Nt(states->bwtBuffer, previousState, nextIntervals);
       for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {
-        ++stats->nBwtPerDepth[depth];
+        //++stats->nBwtPerDepth[depth];
         if (goDownBwt(/* &states->bwtBuffer, */ previousState, nt, &nextInterval)) {
           //nextState = addState(states, depth, nErrors);
           //setState(nextState, &nextInterval, DELETION, nt, stateId);
@@ -645,6 +645,7 @@ bool tryShortCut (const tree_t *tree, states_t *states, path_t *path, FILE *outp
 }
 */
 
+/*
 void printProgress(path_t *path) {
   if (path->depth == TREE_BASE_SIZE) {
     if ((path->cellIds[path->nCells] & 11111) == 0) {
@@ -652,6 +653,7 @@ void printProgress(path_t *path) {
     }
   }
 }
+*/
 
 /**
  * Map one nucleotide
@@ -664,7 +666,7 @@ bool findBestMapping (states_t *states, path_t *path) {
   //printStates(states, path->depth);
   //printf("\t\t\t\tRead: %s\n", path->read + path->readPos);
   //for (size_t i = 0; i < states->nStates[path->depth-1][states->minErrors[path->depth-1]]; ++i) { printState(&states->states[path->depth-1][states->minErrors[path->depth-1]][i], path->maxDepth); }
-  printProgress(path);
+  //printProgress(path);
   /*
   if (path->depth <= TREE_BASE_SIZE) {
     //printf("  with errors\n");
@@ -692,6 +694,7 @@ void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *c
   bool mappable = true;
   while (true) {
     //if (path->depth > TREE_BASE_SIZE) printPath(path);
+    //if (path->depth > TREE_BASE_SIZE) printStates(states, path->depth);
     //printf("%" PRIu32 ": ", path->cellIds[path->nCells]);
     //printCell2(&tree->cells[path->cellIds[path->nCells]]);
     //printf("\n");
@@ -712,6 +715,7 @@ void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *c
       mappable = findBestMapping(states, path);
       //if (path->depth > TREE_BASE_SIZE) printf("\tRead is mappable: %s\n", (mappable)? "yes": "no");
       if ((path->depth >= TREE_BASE_SIZE) && (mappable) && (path->edgeLength == 0)) {
+        //if (path->depth > TREE_BASE_SIZE) printPath(path);
         //if ((cellInfo = getCellInfoTree(path->cellIds[path->nCells], cellVisitor)) != NULL) {
         if (getCellInfoTree(tree, path->cellIds[path->nCells], cellVisitor)) {
           printRead(states, path, getCounts(&tree->cellInfos, *cellVisitor), getQuality(&tree->cellInfos, *cellVisitor), outputSam);
