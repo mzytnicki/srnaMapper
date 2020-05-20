@@ -70,7 +70,6 @@ int main(int argc, char const ** argv) {
   tree2_t tree2;
   thread_t threads;
   bwaidx_t *idx = NULL;
-  nReads = 0;
   parameters = &param;
   stats = &stat;
   parseCommandLine(argc, argv);

@@ -126,7 +126,6 @@ const char CIGAR [4] = { '=', 'X', 'I', 'D' };
 bwt_t *bwt;
 uint8_t *pac;
 bntseq_t *bns;
-unsigned long nReads;
 
 typedef struct {
   bwtint_t k, l;

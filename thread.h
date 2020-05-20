@@ -27,6 +27,7 @@ typedef struct {
 typedef struct {
   tree2_t         *tree;
   FILE           **samFiles;
+  char             threadId;
   pthread_mutex_t *incMutex;
   pthread_mutex_t *writeMutex;
 } mappingThreadParameters_t;
@@ -188,7 +189,7 @@ void *mappingThreadMain (void *parametersVoid) {
   cellVisitor_t              cellVisitor;
   outputSam_t                outputSam;
   outputSam.outputFiles = parameters->samFiles;
-  createOutputSam(&outputSam, parameters->tree->depth, parameters->writeMutex);
+  createOutputSam(&outputSam, parameters->tree->depth, parameters->writeMutex, parameters->threadId);
   updateBounds(&firstCellId, &lastCellId, THREAD_CELLID_STEP, parameters->incMutex, true);
   clearCellVisitor(&cellVisitor);
   while (firstCellId <= N_TREE_BASE) {
@@ -216,7 +217,7 @@ void *mappingThreadMain (void *parametersVoid) {
 void startMappingThreads (thread_t *threads, tree2_t *tree, FILE **samFiles) {
   pthread_mutex_t incMutex   = PTHREAD_MUTEX_INITIALIZER;
   pthread_mutex_t writeMutex = PTHREAD_MUTEX_INITIALIZER;
-  mappingThreadParameters_t threadParameters;
+  mappingThreadParameters_t *threadParameters = (mappingThreadParameters_t *) malloc(parameters->nThreads * sizeof(mappingThreadParameters_t));
   if (pthread_mutex_init(&incMutex, NULL) != 0) {
     fprintf(stderr, "Error! Cannot initialize mutex.\nExiting.\n");
     exit(EXIT_FAILURE);
@@ -225,24 +226,28 @@ void startMappingThreads (thread_t *threads, tree2_t *tree, FILE **samFiles) {
     fprintf(stderr, "Error! Cannot initialize mutex.\nExiting.\n");
     exit(EXIT_FAILURE);
   }
-  threadParameters.tree       =  tree;
-  threadParameters.samFiles   =  samFiles;
-  threadParameters.incMutex   = &incMutex;
-  threadParameters.writeMutex = &writeMutex;
+  for (unsigned int threadId = 0; threadId < parameters->nThreads; ++threadId) {
+    threadParameters[threadId].tree     = tree;
+    threadParameters[threadId].samFiles = samFiles;
+    threadParameters[threadId].incMutex   = &incMutex;
+    threadParameters[threadId].writeMutex = &writeMutex;
+    threadParameters[threadId].threadId   = 'A' + threadId;
+  }
   threadStep = 0;
   //printf("Got %u threads\n", parameters->nThreads); fflush(stdout);
   for (unsigned int threadId = 0; threadId < parameters->nThreads-1; ++threadId) {
-    if (pthread_create(&threads->threads[threadId], NULL, mappingThreadMain, (void *) &threadParameters) != 0) {
+    if (pthread_create(&threads->threads[threadId], NULL, mappingThreadMain, (void *) &threadParameters[threadId]) != 0) {
       fprintf(stderr, "Error!  Thread %u cannot be created.\nExiting.\n", threadId);
       exit(EXIT_FAILURE);
     }
   }
   // Use the main thread too
-  mappingThreadMain((void *) &threadParameters);
+  mappingThreadMain((void *) &threadParameters[parameters->nThreads-1]);
   for (unsigned int threadId = 0; threadId < parameters->nThreads-1; ++threadId) {
     pthread_join(threads->threads[threadId], NULL); 
   }
   //pthread_exit(NULL);
+  free(threadParameters);
   pthread_mutex_destroy(&incMutex);
   pthread_mutex_destroy(&writeMutex);
   fprintf(stderr, "\n");
