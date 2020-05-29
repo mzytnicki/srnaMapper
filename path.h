@@ -28,7 +28,7 @@ typedef struct {
   size_t          nCells;
   size_t          maxDepth;
   size_t          depth;
-  edge_t        *edges;
+  edge_t         *edges;
   //edge2_t        *edges;
   size_t          edgeLength;
   char           *read;

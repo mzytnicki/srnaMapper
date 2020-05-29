@@ -121,6 +121,7 @@ typedef struct {
   char             *forwardQual;
   char             *backwardQual;
   bool             isBackwardSet;
+  size_t           maxSamLines;
   pthread_mutex_t *writeMutex;
   samLine_t       *samLines;
   count_t         *samLinesReadIds;
@@ -136,6 +137,7 @@ void createOutputSam (outputSam_t *outputSam, unsigned int readSize, pthread_mut
   char    *samLinesSequences;
   char    *samLinesQualities;
   unsigned int readIdOffset    = (parameters->uniqueOutputFile)? 1: parameters->nReadsFiles;
+  outputSam->maxSamLines       = MAX(N_SAM_LINES, 2 * parameters->maxNHits);
   outputSam->sequenceSize      = readSize;
   outputSam->isBackwardSet     = false;
   outputSam->readIds           = (count_t *)       calloc(parameters->nReadsFiles,  sizeof(count_t));
@@ -148,18 +150,18 @@ void createOutputSam (outputSam_t *outputSam, unsigned int readSize, pthread_mut
   outputSam->backwardSeq       = (char *)          malloc((readSize+1)            * sizeof(char));
   outputSam->forwardQual       = (char *)          malloc((readSize+1)            * sizeof(char));
   outputSam->backwardQual      = (char *)          malloc((readSize+1)            * sizeof(char));
-  outputSam->samLinesReadIds   = (count_t *)       malloc(N_SAM_LINES * readIdOffset * sizeof(count_t));
-  outputSam->samLinesCounts    = (count_t *)       malloc(N_SAM_LINES * parameters->nReadsFiles * sizeof(count_t));
-  outputSam->samLinesSequences = (char *)          malloc(N_SAM_LINES * (readSize+1) * sizeof(char));
-  outputSam->samLinesQualities = (char *)          malloc(N_SAM_LINES * (readSize+1) * sizeof(char));
+  outputSam->samLinesReadIds   = (count_t *)       malloc(outputSam->maxSamLines * readIdOffset * sizeof(count_t));
+  outputSam->samLinesCounts    = (count_t *)       malloc(outputSam->maxSamLines * parameters->nReadsFiles * sizeof(count_t));
+  outputSam->samLinesSequences = (char *)          malloc(outputSam->maxSamLines * (readSize+1) * sizeof(char));
+  outputSam->samLinesQualities = (char *)          malloc(outputSam->maxSamLines * (readSize+1) * sizeof(char));
   outputSam->writeMutex        = mutex;
   outputSam->nSamLines         = 0;
-  outputSam->samLines          = (samLine_t *) malloc(N_SAM_LINES * sizeof(samLine_t));
+  outputSam->samLines          = (samLine_t *) malloc(outputSam->maxSamLines * sizeof(samLine_t));
   samLinesReadIds   = outputSam->samLinesReadIds;
   samLinesCounts    = outputSam->samLinesCounts;
   samLinesSequences = outputSam->samLinesSequences;
   samLinesQualities = outputSam->samLinesQualities;
-  for (size_t samLineId = 0; samLineId < N_SAM_LINES; ++samLineId) {
+  for (size_t samLineId = 0; samLineId < outputSam->maxSamLines; ++samLineId) {
     createSamLine(&outputSam->samLines[samLineId], threadId, samLinesReadIds, samLinesCounts, samLinesSequences, samLinesQualities);
     samLinesReadIds   += readIdOffset;
     samLinesCounts    += parameters->nReadsFiles;
@@ -183,11 +185,6 @@ void freeOutputSam (outputSam_t *outputSam) {
   free(outputSam->samLinesCounts);
   free(outputSam->samLinesSequences);
   free(outputSam->samLinesQualities);
-  /*
-  for (size_t samLineId = 0; samLineId < N_SAM_LINES; ++samLineId) {
-    freeSamLine(&outputSam->samLines[samLineId]);
-  }
-  */
   free(outputSam->samLines);
 }
 
@@ -226,7 +223,7 @@ void computeReverseComplement (outputSam_t *outputSam) {
  * Print all the SAM buffers to the output file
  */
 void writeToSam (outputSam_t *outputSam, bool compulsory) {
-  if ((! compulsory) && (outputSam->nSamLines < N_SAM_DUMP_THRESHOLD)) {
+  if ((! compulsory) && (outputSam->nSamLines < outputSam->maxSamLines / 2)) {
     return;
   }
   if (pthread_mutex_lock(outputSam->writeMutex) != 0) {
@@ -321,7 +318,7 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
  * Add a new SAM information to the buffer
  */
 void addSamLine (outputSam_t *outputSam, unsigned int flag, int rid, int64_t pos, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, char *cigar, char *sequence, char *quality) {
-  assert(outputSam->nSamLines < N_SAM_LINES);
+  assert(outputSam->nSamLines < outputSam->maxSamLines);
   for (unsigned int fileId = 0; fileId < parameters->nOutputFileNames; ++fileId) {
     copyToSamLine(&outputSam->samLines[outputSam->nSamLines], parameters->nReadsFiles, outputSam->readIds, outputSam->counts, flag, rid, pos, nHits, hitId, nErrors, cigar, sequence, quality);
   }

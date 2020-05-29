@@ -144,7 +144,7 @@ void setQuality (tree_t *tree, size_t cellId, size_t l, char *quality, unsigned 
 uint64_t addCell (tree_t *tree) {
   if (tree->nCells == tree->nAllocated) {
     tree->nAllocated *= 2;
-    //printf("reallocating cells...\n");
+    //printf("reallocating cells: %zu to %zu...\n", tree->nCells, tree->nAllocated);
     if ((tree->cells = (cell_t *) realloc(tree->cells, tree->nAllocated * sizeof(cell_t))) == NULL) {
       printf("Cannot allocate memory for tree of size %lu.\nExiting.\n", tree->nAllocated);
       exit(EXIT_FAILURE);
@@ -160,9 +160,10 @@ uint64_t addCell (tree_t *tree) {
  * Create a new node, split an edge into two, and add the remaining part of the edge to the new cell.
  * The current edge keeps the first part of the sequence.
  */
-uint64_t splitEdgeTree (tree_t *tree, edge_t *edge, sequence_t length, unsigned short newEdgeId) {
+uint64_t splitEdgeTree (tree_t *tree, uint64_t cellId, unsigned short edgeId, sequence_t length, unsigned short newEdgeId) {
+  // Adding cell can trigger reallocation and invalidate edge pointers
   uint64_t newCellId = addCell(tree);
-  splitEdge(edge, &tree->cells[newCellId], newCellId, length, newEdgeId);
+  splitEdge(&tree->cells[cellId].edges[edgeId], &tree->cells[newCellId], newCellId, length, newEdgeId);
   return newCellId;
 }
 
@@ -191,10 +192,15 @@ bool isCellUnbranched (const tree_t *tree, cell_t *cell) {
 }
 
 /**
- * Add the rest of the sequence and extend the edge
+ * Add the rest of the sequence to the tree and extend the edge.
+ * Explore the tree by following the sequence.
+ * Do not add anything the tree ("addSequenceAdd" does it).
+ * Start at node cellId and character sequenceId.
  */
 uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *sequence, int sequenceId, edge_t *edge) {
   unsigned short nucleotide;
+  assert(sequenceId >= 0);
+  assert(cellId < tree->nCells);
   //printf("Adding sequence %s @%" PRIu64 "\n", sequence, cellId);
   for (; sequenceId >= 0; --sequenceId) {
     nucleotide = CHAR_TO_DNA5[(int) sequence[sequenceId]];
@@ -208,16 +214,19 @@ uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *sequence, int sequ
     //printf("  seq id: %d, edge: %p (%i), nucleotide: %c\n", sequenceId, edge, edge->length, DNA5_TO_CHAR[nucleotide]);
     addEdgeNucleotide(edge, nucleotide);
     if (edge->length == MAX_EDGE_LENGTH) {
+      setCellIdEdge(edge, tree->nCells);
+      // Adding cell may trigger reallocate and invalidate edge pointer
       cellId = addCell(tree);
       //printf("  to the end: %" PRIu64 "\n", cellId);
-      setCellIdEdge(edge, cellId);
+      //setCellIdEdge(edge, cellId);
       edge = NULL;
     }
   }
   // set node
   if (edge != NULL) {
+      // Adding cell may trigger reallocate and invalidate edge pointer
+      setCellIdEdge(edge, tree->nCells);
       cellId = addCell(tree);
-      setCellIdEdge(edge, cellId);
   }
   //printf("  over with %" PRIu64 "\n", cellId);
   return cellId;
@@ -234,22 +243,31 @@ uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *sequence, int sequ
   */
 }
 
+/**
+ * Explore the tree by following the sequence.
+ * Do not add anything the tree ("addSequenceAdd" does it).
+ * Start at node cellId and character sequenceId.
+ */
 uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int sequenceId) {
+  assert(sequenceId >= 0);
+  assert(cellId < tree->nCells);
   size_t edgeLength = 0;
-  unsigned short sequenceNucleotide, edgeNucleotide;
+  unsigned short sequenceNucleotide, edgeId, edgeNucleotide;
   edge_t *edge = NULL;
   //printf("Following sequence %s @%" PRIu64 "\n", sequence, cellId); fflush(stdout);
   for (; sequenceId >= 0; --sequenceId) {
     sequenceNucleotide = CHAR_TO_DNA5[(int) sequence[sequenceId]];
     if (edge == NULL) {
       //printf("  new edge\n"); fflush(stdout);
-      edge = &tree->cells[cellId].edges[sequenceNucleotide];
+      edgeId = sequenceNucleotide;
+      edge = &tree->cells[cellId].edges[edgeId];
     }
     //printf("  seq id: %d, edge: %p (%i/%zu) -> %" PRIu64 ", nucleotide: %c\n", sequenceId, edge, edge->length, edgeLength, edge->cellId, DNA5_TO_CHAR[sequenceNucleotide]); fflush(stdout);
+    assert(sequenceId >= 0);
     if (edge->cellId == NO_DATA) {
       return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
     }
-    edgeNucleotide = getEdgeNucleotide(edge, edgeLength); fflush(stdout);
+    edgeNucleotide = getEdgeNucleotide(edge, edgeLength);
     //printf("  edge %p, value: %i, len: %zu/%u, nucleotide: %c (%u)\n", edge, edge->sequence, edgeLength, edge->length, DNA5_TO_CHAR[edgeNucleotide], edgeNucleotide); fflush(stdout);
     if (sequenceNucleotide == edgeNucleotide) {
       //printf("  following to %" PRIu64 "\n", edge->cellId); fflush(stdout);
@@ -263,14 +281,14 @@ uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int s
     }
     else {
       //printf("  split @ %zu\n", edgeLength); fflush(stdout);
-      cellId = edge->cellId;
       if (edgeLength == 0) {
-        edge = &tree->cells[cellId].edges[sequenceNucleotide];
+        cellId = edge->cellId;
+        edge   = &tree->cells[cellId].edges[sequenceNucleotide];
         //printf("  edge is %p\n", edge); fflush(stdout);
         return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
       }
       else {
-        cellId = splitEdgeTree(tree, edge, edgeLength, edgeNucleotide);
+        cellId = splitEdgeTree(tree, cellId, edgeId, edgeLength, edgeNucleotide);
         edge   = &tree->cells[cellId].edges[sequenceNucleotide];
         ++tree->nEdges;
         return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
@@ -281,7 +299,7 @@ uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int s
   //printf("  over with %zu\n", edgeLength); fflush(stdout);
   if (edgeLength != 0) {
     ++tree->nEdges;
-    cellId = splitEdgeTree(tree, edge, edgeLength, N_NUCLEOTIDES);
+    cellId = splitEdgeTree(tree, cellId, edgeId, edgeLength, N_NUCLEOTIDES);
   }
   return cellId;
 }
@@ -291,13 +309,16 @@ bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigne
   int sequenceId = l - 1;
   assert(strlen(sequence) == strlen(quality));
   assert(strlen(quality) == l);
-  if (l < TREE_BASE_SIZE) {
+  // Skip all the reads with a size lower than tree base.
+  // Add one, because the tree base cells are numbered...
+  if (l < TREE_BASE_SIZE + 1) {
     return false;
   }
   for (int i = 0; i < TREE_BASE_SIZE; ++i, --sequenceId) {
     cellId <<= NUCLEOTIDES_BITS;
     cellId += CHAR_TO_DNA5[(int) sequence[sequenceId]];
   }
+  assert(cellId < N_TREE_BASE);
   //printf("First id: %lu, %s\n", cellId, sequence);
   assert(cellId < N_TREE_BASE);
   cellId = addSequenceFollow(tree, cellId, sequence, sequenceId);
@@ -461,19 +482,23 @@ unsigned int filterTree (const tree_t *tree) {
 /**
  * Alter the edges so that they are comparable: either one is empty, or they should be equal.
  */
-void mergeTreeEdge (tree_t *tree1, edge_t *edge1, tree_t *tree2, edge_t *edge2) {
+void mergeTreeEdge (tree_t *tree1, uint64_t cellId1, unsigned short edgeId1, tree_t *tree2, uint64_t cellId2, unsigned short edgeId2) {
   //printf("Merging edge ");
   //printEdge(edge1);
   //printf(" with ");
   //printEdge(edge2);
   //printf("\n"); fflush(stdout);
   unsigned int sequenceId;
+  edge_t *edge1 = &tree1->cells[cellId1].edges[edgeId1];
+  edge_t *edge2 = &tree2->cells[cellId2].edges[edgeId2];
   // first case: the first edge is empty
   if (! isSetEdge(edge1)) {
     ++tree1->nEdges;
     edge1->length   = edge2->length;
     edge1->sequence = edge2->sequence;
-    edge1->cellId   = addCell(tree1);
+    edge1->cellId   = tree1->nCells;
+    // Adding cells may trigger reallocation and invalidate edge pointer
+    addCell(tree1);
     //printf("First case: ");
     //printEdge(edge1);
     //printf("\n"); fflush(stdout);
@@ -488,7 +513,7 @@ void mergeTreeEdge (tree_t *tree1, edge_t *edge1, tree_t *tree2, edge_t *edge2) 
   // split the edges
   if (sequenceId != edge1->length) {
     ++tree1->nEdges;
-    splitEdgeTree(tree1, edge1, sequenceId, N_NUCLEOTIDES);
+    splitEdgeTree(tree1, cellId1, edgeId1, sequenceId, N_NUCLEOTIDES);
     //printf("splitting edge 1: ");
     //printEdge(edge1);
     //printf("\n");
@@ -496,7 +521,7 @@ void mergeTreeEdge (tree_t *tree1, edge_t *edge1, tree_t *tree2, edge_t *edge2) 
     //printf("\n"); fflush(stdout);
   }
   if (sequenceId != edge2->length) {
-    splitEdgeTree(tree2, edge2, sequenceId, N_NUCLEOTIDES);
+    splitEdgeTree(tree2, cellId2, edgeId2, sequenceId, N_NUCLEOTIDES);
     //printf("splitting edge 2: "); fflush(stdout);
     //printEdge(edge2);
     //printf("\n");
@@ -532,9 +557,9 @@ void mergeTreeNodes (tree_t *tree1, uint64_t cellId1, tree_t *tree2, uint64_t ce
  * Merge nodes and proceed to the children edges.
  */
 void _mergeTree (tree_t *tree1, uint64_t cellId1, tree_t *tree2, uint64_t cellId2) {
-  cell_t *cell1 = &tree1->cells[cellId1];
-  cell_t *cell2 = &tree2->cells[cellId2];
-  edge_t *edge1, *edge2;
+  //cell_t *cell1 = &tree1->cells[cellId1];
+  //cell_t *cell2 = &tree2->cells[cellId2];
+  //edge_t *edge1, *edge2;
   //printf("Merge tree %"PRIu64" (%p) vs %"PRIu64" (%p)\n", cellId1, cell1, cellId2, cell2); fflush(stdout);
   //printf("Node 1: ");
   //printCell(cell1);
@@ -543,11 +568,12 @@ void _mergeTree (tree_t *tree1, uint64_t cellId1, tree_t *tree2, uint64_t cellId
   //printf("\n"); fflush(stdout);
   mergeTreeNodes(tree1, cellId1, tree2, cellId2);
   for (unsigned short nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-    edge2 = &cell2->edges[nucleotide];
-    if (isSetEdge(edge2)) {
-      edge1 = &cell1->edges[nucleotide];
-      mergeTreeEdge(tree1, edge1, tree2, edge2);
-      _mergeTree(tree1, edge1->cellId, tree2, edge2->cellId);
+    //edge2 = &cell2->edges[nucleotide];
+    if (isSetEdge(&tree2->cells[cellId2].edges[nucleotide])) {
+      //edge1 = &cell1->edges[nucleotide];
+      // Adding node can trigger reallocation and invalidate edge pointer
+      mergeTreeEdge(tree1, cellId1, nucleotide, tree2, cellId2, nucleotide);
+      _mergeTree(tree1, tree1->cells[cellId1].edges[nucleotide].cellId, tree2, tree2->cells[cellId2].edges[nucleotide].cellId);
     }
   }
 }
