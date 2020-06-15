@@ -253,13 +253,14 @@ void writeToSam (outputSam_t *outputSam, bool compulsory) {
 
 void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
   assert(nLines <= outputSam->nSamLines);
-  size_t     samLineOffset  = outputSam->nSamLines - nLines;
-  size_t     nNewLines      = 1;
-  samLine_t *samLineFirst   = outputSam->samLines + samLineOffset;
-  samLine_t *samLineFree    = samLineFirst + 1;
-  samLine_t *samLineCurrent = samLineFree;
-  int        previousRid, currentRid;
-  uint64_t   previousPos, currentPos;
+  size_t       samLineOffset  = outputSam->nSamLines - nLines;
+  size_t       nNewLines      = 1;
+  samLine_t   *samLineFirst   = outputSam->samLines + samLineOffset;
+  samLine_t   *samLineFree    = samLineFirst + 1;
+  samLine_t   *samLineCurrent = samLineFree;
+  int          previousRid, currentRid;
+  uint64_t     previousPos, currentPos;
+  unsigned int previousStrand, currentStrand;
   if (nLines <= 1) {
     return;
   }
@@ -270,8 +271,9 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
   }
   */
   qsort(samLineFirst, nLines, sizeof(samLine_t), samLineComparator);
-  previousRid = samLineFirst->rid;
-  previousPos = samLineFirst->pos;
+  previousRid    = samLineFirst->rid;
+  previousPos    = samLineFirst->pos;
+  previousStrand = samLineFirst->flag & CIGAR_REVERSE;
   /*
   printf("Sorting\n");
   for (unsigned int i = 0; i < nLines; ++i) {
@@ -285,18 +287,20 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
       printSamLine(&outputSam->samLines[samLineOffset+i]);
     }
     */
-    currentRid = samLineCurrent->rid;
-    currentPos = samLineCurrent->pos;
-    if ((previousRid != currentRid) || (currentPos - previousPos > parameters->maxNErrors)) {
+    currentRid    = samLineCurrent->rid;
+    currentPos    = samLineCurrent->pos;
+    currentStrand = samLineCurrent->flag & CIGAR_REVERSE;
+    if ((previousRid != currentRid) || (currentPos - previousPos > samLineCurrent->nErrors) || (previousStrand != currentStrand)) {
       if (samLineFree != samLineCurrent) {
         //memcpy(samLineFree, samLineCurrent, sizeof(samLine_t));
         swapSamLines(samLineFree, samLineCurrent);
       }
       ++samLineFree;
       ++nNewLines;
+      previousRid    = currentRid;
+      previousPos    = currentPos;
+      previousStrand = currentStrand;
     }
-    previousRid = currentRid;
-    previousPos = currentPos;
   }
   if (nNewLines != nLines) {
     for (unsigned int hitId = 0; hitId < nNewLines; ++hitId) {
