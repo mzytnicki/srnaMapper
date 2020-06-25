@@ -109,10 +109,7 @@ bool readReadsFile (FILE *inFile, char *fileName, tree_t *tree, unsigned int fil
     assert(strlen(sequence) == (unsigned long) nRead);
     trimSequence(nRead, sequence);
     trimSequence(nRead, quality);
-    ++stats->nReads;
-    if (! addSequence(tree, nRead-1, sequence, quality, fileId)) {
-      ++stats->nShortReads;
-    }
+    addSequence(tree, nRead-1, sequence, quality, fileId);
     over = isPastEnd(ftello64(inFile), posEnd);
   }
   free(line);

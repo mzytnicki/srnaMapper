@@ -2,7 +2,6 @@
 #define BWT_H
 
 #include "constants.h"
-#include "stats.h"
 #include "state.h"
 
 

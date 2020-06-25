@@ -4,7 +4,6 @@
 #include "constants.h"
 #include "parameters.h"
 #include "helper.h"
-#include "stats.h"
 #include "edge.h"
 #include "cell.h"
 #include "quality.h"

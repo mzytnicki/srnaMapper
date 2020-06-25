@@ -3,7 +3,6 @@
 
 #include "constants.h"
 #include "helper.h"
-#include "stats.h"
 #include "parameters.h"
 #include "sam.h"
 #include "edge.h"

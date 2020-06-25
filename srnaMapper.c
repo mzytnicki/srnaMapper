@@ -44,7 +44,6 @@
 
 #include "constants.h"
 #include "helper.h"
-#include "stats.h"
 #include "parameters.h"
 #include "sam.h"
 #include "edge.h"
@@ -63,15 +62,12 @@
 
 int main(int argc, char const ** argv) {
   parameters_t param;
-  stats_t stat;
   tree_t tree;
   tree2_t tree2;
   thread_t threads;
   bwaidx_t *idx = NULL;
   parameters = &param;
-  stats = &stat;
   parseCommandLine(argc, argv);
-  initializeStats();
   createTree(&tree);
   createThreads(&threads);
   FILE **inputFastqFiles = (FILE **) malloc(parameters->nReadsFiles * sizeof(FILE *));
@@ -83,7 +79,6 @@ int main(int argc, char const ** argv) {
   filterTree(&tree);
   printf("... done.\n");
   printf("Maximum read size: %zu\n", tree.depth);
-  //computeTreeStats(&tree);
   if (parameters->outputReadsFileName != NULL) {
     puts("Printing tree...");
     printTree(parameters->outputReadsFileName, &tree);
@@ -104,20 +99,14 @@ int main(int argc, char const ** argv) {
   bns = idx->bns;
   FILE **outputSamFiles = (FILE **) malloc(parameters->nOutputFileNames * sizeof(FILE *));
   openSamFiles(outputSamFiles);
-  //outputSam.file = outputSamFile;
-  //createOutputSam(&outputSam, tree2.depth);
-  //map(&tree2, &outputSam);
   startMappingThreads(&threads, &tree2, outputSamFiles);
   closeSamFiles(outputSamFiles);
   freeThreads(&threads);
   free(outputSamFiles);
   freeTree2(&tree2);
-  //freeOutputSam(&outputSam);
   freeParameters(parameters);
   bwa_idx_destroy(idx);
   puts("... done.");
-  printStats();
-  freeStats();
   pthread_exit(NULL);
   //return 0;
 }
