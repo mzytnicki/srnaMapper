@@ -5,119 +5,6 @@
 #include "parameters.h"
 #include "state.h"
 #include "bwt.h"
-#include "sw.h"
-
-typedef struct {
-  size_t nElements;
-  size_t size;
-  char  *bitField;
-} bit_array_t;
-
-void initializeBitArray (bit_array_t *bitArray, size_t size) {
-  bitArray->nElements = ((size + (CHAR_BIT) - 1) / (CHAR_BIT));
-  bitArray->bitField = (char *) calloc(bitArray->nElements, sizeof(char));
-  bitArray->size = size;
-}
-
-void freeBitArray (bit_array_t *bitArray) {
-  free(bitArray->bitField);
-}
-
-
-void setBitArray (bit_array_t *bitArray, size_t value) {
-  assert(value < bitArray->size);
-  bitArray->bitField[value / CHAR_BIT] |= (1 << (value % CHAR_BIT));
-}
-
-bool isSetBitArray(const bit_array_t *bitArray, size_t value) {
-  assert(value < bitArray->size);
-  return ((bitArray->bitField[value / CHAR_BIT] & (1 << (value % CHAR_BIT)))? true: false);
-}
-
-void resetBitArray (bit_array_t *bitArray) {
-  memset(bitArray->bitField, 0, bitArray->nElements * sizeof(char));
-}
-
-
-/*
-typedef struct {
-  state_t     *statesHash;
-  size_t      *idUsed;
-  bit_array_t  isUsed;
-  size_t       nHashUsed;
-  state_t     *statesVector;
-  size_t       nStatesVectorAllocated;
-  size_t       nStatesVectorUsed;
-} states_hash_t;
-
-void initializeStatesHash (states_hash_t *statesHash) {
-  statesHash->statesHash             = (state_t *) malloc(N_STATES_HASH_SIZE * sizeof(state_t));
-  statesHash->idUsed                 = (size_t *)   malloc(N_STATES_HASH_SIZE * sizeof(size_t));
-  statesHash->nHashUsed              = 0;
-  statesHash->statesVector           = (state_t *) malloc(N_STATES_VECTOR_SIZE * sizeof(state_t));
-  statesHash->nStatesVectorAllocated = N_STATES_VECTOR_SIZE;
-  statesHash->nStatesVectorUsed      = 0;
-  initializeBitArray(&statesHash->isUsed, N_STATES_HASH_SIZE);
-}
- 
-void freeStatesHash (states_hash_t *statesHash) {
-  free(statesHash->statesHash);
-  free(statesHash->idUsed);
-  free(statesHash->statesVector);
-  freeBitArray(&statesHash->isUsed);
-}
-*/
-
-/*
-state_t *addStateToHashVector (states_hash_t *statesHash, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
-  state_t *state;
-  for (size_t stateId = 0; stateId < statesHash->nStatesVectorUsed; ++stateId) {
-    if (compareBwtIntervals(interval, &statesHash->statesVector[stateId].interval)) {
-      ++stats->nSkippedStateInsertions;
-      return &statesHash->statesVector[stateId];
-    }
-  }
-  if (statesHash->nStatesVectorUsed == statesHash->nStatesVectorAllocated-1) {
-    statesHash->nStatesVectorAllocated *= 2;
-    statesHash->statesVector = (state_t *) realloc(statesHash->statesVector, statesHash->nStatesVectorAllocated);
-  }
-  state = &statesHash->statesVector[statesHash->nStatesVectorUsed];
-  setState(state, interval, trace, nucleotide, previousState);
-  ++statesHash->nStatesVectorUsed;
-  stats->maxHashVectorSize = MAX(stats->maxHashVectorSize, statesHash->nStatesVectorUsed);
-  return state;
-}
-
-state_t *_addStateToHash (states_hash_t *statesHash, size_t hashValue, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
-  state_t *state = &statesHash->statesHash[hashValue];
-  setBitArray(&statesHash->isUsed, hashValue);
-  setState(state, interval, trace, nucleotide, previousState);
-  statesHash->idUsed[statesHash->nHashUsed] = hashValue;
-  ++statesHash->nHashUsed;
-  //stats->maxHashSize = MAX(stats->maxHashSize, statesHash->nHashUsed);
-  return state;
-}
-
-state_t *addStateToHash (states_hash_t *statesHash, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
-  size_t hashValue = getBwtHash(*interval) % N_STATES_HASH_SIZE;
-  if (isSetBitArray(&statesHash->isUsed, hashValue)) {
-    if (compareBwtIntervals(interval, &statesHash->statesHash[hashValue].interval)) {
-      ++stats->nSkippedStateInsertions;
-      return &statesHash->statesHash[hashValue];
-    }
-    return addStateToHashVector(statesHash, interval, trace, nucleotide, previousState);
-  }
-  return _addStateToHash(statesHash, hashValue, interval, trace, nucleotide, previousState);
-}
-
-void clearHash (states_hash_t *statesHash) {
-  statesHash->nHashUsed         = 0;
-  statesHash->nStatesVectorUsed = 0;
-  resetBitArray(&statesHash->isUsed);
-}
-*/
-
-
 
 /******* States type *******/
 /**
@@ -140,9 +27,6 @@ typedef struct {
   size_t        *minErrors;
   size_t        *maxErrors;
   size_t        depth;
-  sw_t          *sw;
-  bwt_buffer_t   bwtBuffer;
-  //states_hash_t  statesHash;
 } states_t;
 
 void printStates (const states_t *states, size_t depth) {
@@ -240,28 +124,6 @@ void updateCounts (states_t *states, size_t depth, size_t nErrors, size_t nState
   //return &states->states[nErrors][states->nStatesPerError[nErrors]-1];
 }
 
-/*
-void addHashStates (states_t *states, size_t depth, size_t nErrors) {
-  assert(depth <= states->depth);
-  size_t nNewStates = states->statesHash.nHashUsed + states->statesHash.nStatesVectorUsed;
-  size_t offset;
-  if (nNewStates == 0) {
-    return;
-  }
-  updateCounts(states, depth, nErrors, nNewStates);
-  offset = states->firstState[depth][nErrors];
-  //printf("Adding %zu+%zu=%zu hash states with %zu errors, starting point: %zu/%p\n", states->statesHash.nHashUsed, states->statesHash.nStatesVectorUsed, nNewStates, nErrors, offset, &states->states[nErrors][offset]); fflush(stdout);
-  for (size_t stateId = 0; stateId < states->statesHash.nHashUsed; ++stateId, ++offset) {
-    //printf("  Setting hash interval #%zu/%zu %" PRIu64 "-%" PRIu64 "\n", stateId, states->statesHash.idUsed[stateId], states->statesHash.statesHash[states->statesHash.idUsed[stateId]].interval.k, states->statesHash.statesHash[states->statesHash.idUsed[stateId]].interval.l);
-    memcpy(&states->states[nErrors][offset], &states->statesHash.statesHash[states->statesHash.idUsed[stateId]], sizeof(state_t));
-  }
-  for (size_t stateId = 0; stateId < states->statesHash.nStatesVectorUsed; ++stateId, ++offset) {
-    memcpy(&states->states[nErrors][offset], &states->statesHash.statesVector[stateId], sizeof(state_t));
-  }
-  clearHash(&states->statesHash);
-}
-*/
-
 void printBacktrace (states_t *states, int depth, int nErrors, size_t stateId) {
   printf("Backtrace:\n");
   state_t *state;
@@ -338,14 +200,6 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
 
 state_t *addState (states_t *states, size_t depth, size_t nErrors, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
   return _addState(states, depth, nErrors, interval, trace, nucleotide, previousState);
-  /*
-  directAdd = true;
-  ++stats->nTentativeStateInsertions;
-  if (directAdd) {
-    return _addState(states, depth, nErrors, interval, trace, nucleotide, previousState);
-  }
-  return addStateToHash(&states->statesHash, interval, trace, nucleotide, previousState);
-  */
 }
 
 void clearStates (states_t *states) {
@@ -369,7 +223,6 @@ states_t *initializeStates(size_t treeSize) {
   states->nStatesPerPosition = (size_t *)       calloc(states->depth,  sizeof(size_t));
   states->minErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
   states->maxErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
-  states->sw                 = (sw_t *)         malloc(sizeof(sw_t));
   for (size_t depth = 0; depth < states->depth; ++depth) {
     states->firstState[depth] = (size_t *) malloc((parameters->maxNErrors+1) * sizeof(size_t));
     states->nStates[depth]    = (size_t *) malloc((parameters->maxNErrors+1) * sizeof(size_t));
@@ -389,9 +242,7 @@ states_t *initializeStates(size_t treeSize) {
     }
   }
   clearStates(states);
-  createSW(states->sw, states->depth);
   //createBwtBuffer(&states->bwtBuffer);
-  //initializeStatesHash(&states->statesHash);
   return states;
 }
 
@@ -474,9 +325,6 @@ void freeStates(states_t *states) {
   free(states->nStatesPerPosition);
   free(states->minErrors);
   free(states->maxErrors);
-  //freeStatesHash(&states->statesHash);
-  freeSW(states->sw);
-  free(states->sw);
   free(states);
 }
 

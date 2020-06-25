@@ -230,17 +230,6 @@ uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *sequence, int sequ
   }
   //printf("  over with %" PRIu64 "\n", cellId);
   return cellId;
-  /*
-  cell_t *cell = &tree->cells[cellId];
-  uint64_t newCellId = cell->children[childId];
-  if (newCellId != NO_DATA) {
-    return newCellId;
-  }
-  newCellId = addCell(tree);
-  cell = &tree->cells[cellId]; // may be reallocated!
-  cell->children[childId] = newCellId;
-  return newCellId;
-  */
 }
 
 /**

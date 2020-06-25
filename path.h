@@ -4,7 +4,6 @@
 #include "constants.h"
 #include "edge.h"
 #include "cell.h"
-#include "shortcut.h"
 #include "tree.h"
 #include "tree2.h"
 #include "states.h"
@@ -29,11 +28,9 @@ typedef struct {
   size_t          maxDepth;
   size_t          depth;
   edge_t         *edges;
-  //edge2_t        *edges;
   size_t          edgeLength;
   char           *read;
   size_t          readPos;
-  shortCut_t     *shortCut;
 } path_t;
 
 void printPath (path_t *path) {
@@ -75,7 +72,6 @@ path_t *initializePath (size_t maxDepth) {
   path->maxDepth       = maxDepth;
   path->cellIds[0]     = 0;
   path->read[maxDepth] = 0;
-  path->shortCut       = initializeShortCut();
   clearPath(path);
   return path;
 }
@@ -86,7 +82,6 @@ void freePath (path_t *path) {
   free(path->cellIds);
   free(path->edges);
   free(path->read);
-  free(path->shortCut);
   free(path);
 }
 
@@ -138,46 +133,6 @@ bool goDownTreeBase (path_t *path, uint32_t firstCellId) {
   //printPath(path);
   return false;
 }
-
-/**
- * Step into the first cells of the tree in a DFS fashion.
-bool goDownTreeNotBase (const tree_t *tree, path_t *path) {
-  printf("\t\tGoing to tree\n");
-  edge2_t *edge = NULL;
-  unsigned short nucleotide;
-  //printPath(path);
-  assert(path->depth <= tree->depth);
-  assert(path->nCells <= tree->depth);
-  if (path->edgeLength == 0) {
-    cell_t *cell = &tree->cells[path->cellIds[path->nCells]];
-    for (nucleotide = 0; nucleotide < N_NUCLEOTIDES; ++nucleotide) {
-      edge = &cell->edges[nucleotide];
-      if (isSetEdge(edge)) {
-        path->edges[path->nCells] = *edge;
-        path->edgeLength          = 1;
-        appendNucleotidePath(path, nucleotide, DNA5_TO_CHAR[nucleotide]);
-        if (path->edgeLength == edge->length) {
-          path->edgeLength = 0;
-          path->cellIds[++path->nCells] = edge->cellId;
-        }
-        //printf("to %zu with read '%s'\n", path->depth, path->read+path->readPos);
-        return true;
-      }
-    }
-    //printf("\t\t\tNothing found\n");
-    return false;
-  }
-  edge = &path->edges[path->nCells];
-  nucleotide = getEdge2Nucleotide(edge, path->edgeLength);
-  ++path->edgeLength;
-  appendNucleotidePath(path, nucleotide, DNA5_TO_CHAR[nucleotide]);
-  if (path->edgeLength == edge->length) {
-    path->edgeLength = 0;
-    path->cellIds[++path->nCells] = edge->cellId;
-  }
-  return true;
-}
- */
 
 /**
  * Step into the first cells of the tree in a DFS fashion.
@@ -357,7 +312,6 @@ bool goRightTree2NotBase (const tree2_t *tree, path_t *path, uint64_t lastCellId
 bool goRightTree2 (const tree2_t *tree, path_t *path, uint32_t lastCellId) {
   //printf("  Go right read from depth %zu with read '%s'\n", path->depth, path->read+path->readPos);
   //printPath(path);
-  unsetShortCut(path->shortCut);
   if (path->depth > TREE_BASE_SIZE) {
     return goRightTree2NotBase(tree, path, lastCellId);
   }

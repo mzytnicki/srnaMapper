@@ -134,26 +134,6 @@ void swapStates(state_t *s1, state_t *s2) {
   *s2 = tmp; 
 } 
 
-/*
-void computeBacktrace (state_t *state, outputSam_t *outputSam) {
-  assert(state != NULL);
-  outputSam->backtraceSize = 0;
-  while (state->previousState != NULL) {
-    //printState(state, 101); fflush(stdout);
-    char cigar = CIGAR[state->trace];
-    if ((outputSam->backtraceSize == 0) || (outputSam->backtraceCigar[outputSam->backtraceSize-1] != cigar)) {
-      outputSam->backtraceCigar[outputSam->backtraceSize] = cigar;
-      outputSam->backtraceLengths[outputSam->backtraceSize] = 1;
-      ++outputSam->backtraceSize;
-    }
-    else {
-      ++outputSam->backtraceLengths[outputSam->backtraceSize-1];
-    }
-    state = state->previousState;
-  }
-}
-*/
-
 /**
  * Print all the reads in a given state
  */
