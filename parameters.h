@@ -20,7 +20,21 @@ typedef struct {
 parameters_t *parameters;
 
 void printUsage () {
-  puts("srnaCollapser [-h] -r reads -g genome -o filename [-t #threads] [-u] [-c filename] [-f filter] [-e #errors] [-n #max_hits]");
+  puts("Usage:\n"
+       "srnaMapper [parameters]\n\n"
+       "Compulsory parameters:\n"
+       "  -r string: file name in FASTQ format\n"
+       "  -g string: prefix of the genome database (produced by bwa build)\n"
+       "  -o string: output file in SAM format\n"
+       "Optional parameters:\n"
+       "  -n int: maximum number of errors (default: 2)\n"
+       "  -t int: number of threads (default: 1)\n"
+       "  -n int: discard reads when they map more than n times (default: 5)\n"
+       "  -f int: low complexity threshold, more is more lenient (default: 6)\n"
+       "  -u: if set, print all the mapped reads in a unique SAM file (with the counts for each sample)\n"
+       "Notes:\n"
+       "  The '-r' option should be repeated once per input file.\n"
+       "  Unless the the '-u' option is set, the '-o' option should also be repeated once per input file.\n");
 }
 
 void parseCommandLine (int argc, char const **argv) {
