@@ -34,7 +34,7 @@ void closeFastqFiles (FILE **inputFastqFiles) {
 bool setToStart (FILE *inFile, off64_t posStart) {
   char *line = NULL;
   size_t len = 0;
-  char    firstChars[2*FASTQ_LINES-1];
+  char    firstChars[2*FASTQ_LINES];
   off64_t offsets[2*FASTQ_LINES-1];
   // Bad trick in case the 5th line is over the EOF.
   firstChars[2*FASTQ_LINES-1] = 0;
@@ -91,6 +91,7 @@ bool readReadsFile (FILE *inFile, char *fileName, tree_t *tree, unsigned int fil
   }
   while (((nRead = getline(&line, &len, inFile)) != -1) && (! over)) {
     nRead = getline(&sequence, &len, inFile);
+    //printf("Read %s\n", sequence); fflush(stdout);
     if (nRead == -1) {
       fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
       exit(EXIT_FAILURE);
