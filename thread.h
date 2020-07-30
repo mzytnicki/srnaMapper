@@ -6,7 +6,7 @@
 #include "tree2.h"
 #include "main.h"
 
-#define THREAD_BYTES_STEP 0x10000
+#define THREAD_BYTES_STEP 0x100000
 #define THREAD_CELLID_STEP 0x100
 
 /**
