@@ -1,6 +1,7 @@
 #ifndef STATE_H
 #define STATE_H
 
+#include <limits.h>
 #include "constants.h"
 #include "sam.h"
 
