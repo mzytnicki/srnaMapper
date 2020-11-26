@@ -196,13 +196,13 @@ bool isCellUnbranched (const tree_t *tree, cell_t *cell) {
  * Do not add anything the tree ("addSequenceAdd" does it).
  * Start at node cellId and character sequenceId.
  */
-uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *sequence, int sequenceId, edge_t *edge) {
+uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *binarySequence, int sequenceId, edge_t *edge) {
   unsigned short nucleotide;
   assert(sequenceId >= 0);
   assert(cellId < tree->nCells);
   //printf("Adding sequence %s @%" PRIu64 "\n", sequence, cellId);
   for (; sequenceId >= 0; --sequenceId) {
-    nucleotide = CHAR_TO_DNA5[(int) sequence[sequenceId]];
+    nucleotide = binarySequence[sequenceId];
     if (edge == NULL) {
       ++tree->nEdges;
       edge = &tree->cells[cellId].edges[nucleotide];
@@ -236,7 +236,7 @@ uint64_t addSequenceAdd (tree_t *tree, uint64_t cellId, char *sequence, int sequ
  * Do not add anything the tree ("addSequenceAdd" does it).
  * Start at node cellId and character sequenceId.
  */
-uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int sequenceId) {
+uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *binarySequence, int sequenceId) {
   assert(sequenceId >= 0);
   assert(cellId < tree->nCells);
   size_t edgeLength = 0;
@@ -244,7 +244,7 @@ uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int s
   edge_t *edge = NULL;
   //printf("Following sequence %s @%" PRIu64 "\n", sequence, cellId); fflush(stdout);
   for (; sequenceId >= 0; --sequenceId) {
-    sequenceNucleotide = CHAR_TO_DNA5[(int) sequence[sequenceId]];
+    sequenceNucleotide = binarySequence[sequenceId];
     if (edge == NULL) {
       //printf("  new edge\n"); fflush(stdout);
       edgeId = sequenceNucleotide;
@@ -253,7 +253,7 @@ uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int s
     //printf("  seq id: %d, edge: %p (%i/%zu) -> %" PRIu64 ", nucleotide: %c\n", sequenceId, edge, edge->length, edgeLength, edge->cellId, DNA5_TO_CHAR[sequenceNucleotide]); fflush(stdout);
     assert(sequenceId >= 0);
     if (edge->cellId == NO_DATA) {
-      return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
+      return addSequenceAdd(tree, cellId, binarySequence, sequenceId, edge);
     }
     edgeNucleotide = getEdgeNucleotide(edge, edgeLength);
     //printf("  edge %p, value: %i, len: %zu/%u, nucleotide: %c (%u)\n", edge, edge->sequence, edgeLength, edge->length, DNA5_TO_CHAR[edgeNucleotide], edgeNucleotide); fflush(stdout);
@@ -273,13 +273,13 @@ uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *sequence, int s
         cellId = edge->cellId;
         edge   = &tree->cells[cellId].edges[sequenceNucleotide];
         //printf("  edge is %p\n", edge); fflush(stdout);
-        return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
+        return addSequenceAdd(tree, cellId, binarySequence, sequenceId, edge);
       }
       else {
         cellId = splitEdgeTree(tree, cellId, edgeId, edgeLength, edgeNucleotide);
         edge   = &tree->cells[cellId].edges[sequenceNucleotide];
         ++tree->nEdges;
-        return addSequenceAdd(tree, cellId, sequence, sequenceId, edge);
+        return addSequenceAdd(tree, cellId, binarySequence, sequenceId, edge);
       }
     }
   }
@@ -302,9 +302,10 @@ bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigne
   if (l < TREE_BASE_SIZE + 1) {
     return false;
   }
+  converToBinary(l, sequence);
   for (int i = 0; i < TREE_BASE_SIZE; ++i, --sequenceId) {
     cellId <<= NUCLEOTIDES_BITS;
-    cellId += CHAR_TO_DNA5[(int) sequence[sequenceId]];
+    cellId += sequence[sequenceId];
   }
   assert(cellId < N_TREE_BASE);
   //printf("First id: %lu, %s\n", cellId, sequence);

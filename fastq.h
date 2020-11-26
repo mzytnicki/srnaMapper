@@ -27,14 +27,14 @@ void closeFastqFiles (FILE **inputFastqFiles) {
 }
 
 /**
- * Jump to the next FASTQ junk.
+ * Jump to the next FASTQ chunk.
  * Return false if we reached the EOF.
  * Should read the first 5 lines, because the first one could be truncated.
  */
 bool setToStart (FILE *inFile, off64_t posStart) {
   char *line = NULL;
   size_t len = 0;
-  char    firstChars[2*FASTQ_LINES-1];
+  char    firstChars[2*FASTQ_LINES];
   off64_t offsets[2*FASTQ_LINES-1];
   // Bad trick in case the 5th line is over the EOF.
   firstChars[2*FASTQ_LINES-1] = 0;
