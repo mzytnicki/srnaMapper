@@ -31,7 +31,7 @@ unsigned short getNucleotide (unsigned long sequence, size_t position) {
 void converToBinary (size_t l, char *sequence) {
   for (unsigned int i = 0; i < l; ++i) {
     char nucleotide = CHAR_TO_DNA5[(int) sequence[l]];
-    if (nucleotide > N_NUCLEOTIDES) {
+    if (nucleotide >= N_NUCLEOTIDES) {
       nucleotide = rand() % N_NUCLEOTIDES;
     }
     sequence[i] = nucleotide;
