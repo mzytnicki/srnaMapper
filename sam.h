@@ -9,8 +9,8 @@
  * Stores a hit, and the number of corresponding identical sequences in the input files
  */
 typedef struct {
-  char         threadId;
-  count_t     *readIds;
+  char         threadId; // one char ('A', 'B', etc.) per thread, written in the (unique) read name
+  count_t     *readIds;  // one read id for each output file, the id is given to the first read (in case of multiple reads per sequence)
   count_t     *counts;
   unsigned int flag;
   int          rid;
@@ -61,7 +61,7 @@ void swapSamLines (samLine_t *samLine1, samLine_t *samLine2) {
 }
 
 void printSamLine (const samLine_t *samLine) {
-  printf("%s (%p, %p) pos %i:%"PRId64" %u/%u hits, counts:", samLine->sequence, samLine, samLine->sequence, samLine->rid, samLine->pos, samLine->hitId, samLine->nHits);
+  printf("%s (%p, %p) pos %i:%" PRId64 " %u/%u hits, counts:", samLine->sequence, samLine, samLine->sequence, samLine->rid, samLine->pos, samLine->hitId, samLine->nHits);
   for (unsigned int i = 0; i < parameters->nReadsFiles; ++i) {
     printf(" %u", samLine->counts[i]);
   }
@@ -335,6 +335,9 @@ void addSamLine (outputSam_t *outputSam, unsigned int flag, int rid, int64_t pos
 void printReadLineManyHits (char *seq, char *qual, bwtint_t nHits, unsigned int nErrors, outputSam_t *outputSam) {
   addSamLine(outputSam, 4, -1, 0, nHits, 0, nErrors, "*", seq, qual);
   writeToSam(outputSam, false);
+  for (unsigned int fileId = 0; fileId < parameters->nOutputFileNames; ++fileId) {
+    outputSam->readIds[fileId] += outputSam->counts[fileId];
+  }
 }
 
 /**
