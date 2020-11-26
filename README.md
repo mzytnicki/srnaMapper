@@ -26,6 +26,7 @@ Optional parameters:
 * `-n` *int*: discard reads when they map more than n times (default: 5)
 * `-f` *int*: low complexity threshold, more is more lenient (default: 6)
 * `-u`: if set, print all the mapped reads in a unique SAM file (with the counts for each sample)
+* `-s` *int*: set the random seed (time otherwise)
 * `-h`: the help message
 
 Notes:
