@@ -8,6 +8,11 @@ Simply type `make`.
 srnaMapper uses the `bwa` API, and the `bwa` index files.
 Use `bwa index` to generate the index files.
 
+## Note
+
+As in `bwa`, ambiguous nucleotides in the genome are converted to a random nucleotide.
+
+The procedure is identical for the reads. 
 
 # Using srnaMapper
 
