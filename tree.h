@@ -302,7 +302,8 @@ bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigne
   if (l < TREE_BASE_SIZE + 1) {
     return false;
   }
-  converToBinary(l, sequence);
+  // convert to binary beforehand, because ambiguous nt are converted here
+  convertToBinary(l, sequence);
   for (int i = 0; i < TREE_BASE_SIZE; ++i, --sequenceId) {
     cellId <<= NUCLEOTIDES_BITS;
     cellId += sequence[sequenceId];
