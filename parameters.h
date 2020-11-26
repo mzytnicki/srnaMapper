@@ -1,6 +1,7 @@
 #ifndef PARAMETERS_H
 #define PARAMETERS_H
 
+#include <time.h>
 #include "constants.h"
 
 typedef struct {
@@ -32,6 +33,7 @@ void printUsage () {
        "  -n int: discard reads when they map more than n times (default: 5)\n"
        "  -f int: low complexity threshold, more is more lenient (default: 6)\n"
        "  -u: if set, print all the mapped reads in a unique SAM file (with the counts for each sample)\n"
+       "  -s int: set the random seed (time otherwise)\n"
        "Notes:\n"
        "  The '-r' option should be repeated once per input file.\n"
        "  Unless the the '-u' option is set, the '-o' option should also be repeated once per input file.\n");
@@ -39,6 +41,7 @@ void printUsage () {
 
 void parseCommandLine (int argc, char const **argv) {
   char *endptr;
+  srand(time(NULL));
   parameters->nOutputFileNames       = 0;
   parameters->uniqueOutputFile       = false;
   parameters->genomeFileName         = NULL;
@@ -102,6 +105,10 @@ void parseCommandLine (int argc, char const **argv) {
     }
     else if (strcmp(argv[i], "-u") == 0) {
       parameters->uniqueOutputFile = true;
+    }
+    else if (strcmp(argv[i], "-s") == 0) {
+      ++i;
+      srand(strtol(argv[i], &endptr, 10));
     }
     else {
       printf("Cannot understand parameter '%s'\n", argv[i]);
