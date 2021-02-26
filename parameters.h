@@ -28,7 +28,7 @@ void printUsage () {
        "  -g string: prefix of the genome database (produced by bwa build)\n"
        "  -o string: output file in SAM format\n"
        "Optional parameters:\n"
-       "  -n int: maximum number of errors (default: 2)\n"
+       "  -e int: maximum number of errors (default: 2)\n"
        "  -t int: number of threads (default: 1)\n"
        "  -n int: discard reads when they map more than n times (default: 5)\n"
        "  -f int: low complexity threshold, more is more lenient (default: 6)\n"
