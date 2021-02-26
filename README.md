@@ -26,7 +26,7 @@ Compulsory parameters:
 
 Optional parameters:
 
-* `-n` *int*: maximum number of errors (default: 2)
+* `-e` *int*: maximum number of errors (default: 2)
 * `-t` *int*: number of threads (default: 1)
 * `-n` *int*: discard reads when they map more than n times (default: 5)
 * `-f` *int*: low complexity threshold, more is more lenient (default: 6)
