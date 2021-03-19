@@ -303,6 +303,7 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
     }
   }
   if (nNewLines != nLines) {
+    outputSam->samLines[samLineOffset].flag = outputSam->samLines[samLineOffset].flag & (~ CIGAR_SECONDARY_HIT);
     for (unsigned int hitId = 0; hitId < nNewLines; ++hitId) {
       outputSam->samLines[samLineOffset+hitId].hitId = hitId + 1;
       outputSam->samLines[samLineOffset+hitId].nHits = nNewLines;
