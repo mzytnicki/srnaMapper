@@ -380,7 +380,7 @@ void printReadUniqueNoError (int strand, int rid, int64_t pos, size_t readLength
  * Collect information before printing read
  */
 void preparePrintRead (uint64_t pos, int rid, int strand, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, outputSam_t *outputSam) {
-  unsigned int flag = (hitId == 0)? 0: CIGAR_SECONDARY_HIT;
+  unsigned int flag = (hitId == 1)? 0: CIGAR_SECONDARY_HIT;
   if (strand == 0) {
     flag |= CIGAR_REVERSE;
   }
