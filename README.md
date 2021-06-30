@@ -1,7 +1,8 @@
-# Compiling
+# Install
 
-Simply type `make`.
-
+* Download the tool with `git clone https://github.com/mzytnicki/srnaMapper.git`
+* Go the directory with `cd srnaMapper`
+* Compile with `make`
 
 # Generating the genome index
 
