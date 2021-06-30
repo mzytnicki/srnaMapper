@@ -4,6 +4,9 @@
 * Go the directory with `cd srnaMapper`
 * Compile with `make`
 
+You should have the `zlib` library, and a C++11 compiler.
+
+
 # Generating the genome index
 
 srnaMapper uses the `bwa` API, and the `bwa` index files.
@@ -43,3 +46,10 @@ Notes:
 Example:
 
     ./srnaMapper -r cond1_rep1.fastq -r cond1_rep2.fastq -r cond2_rep1.fastq -r cond2_rep2.fastq -g genome -o cond1_rep1.sam -o cond1_rep2.sam -o cond2_rep1.sam -o cond2_rep2.sam -t 10
+
+# Questions
+
+## The names of the mapped reads are scrambled
+
+Yes.  This is necessary for srnaMapper to work.  Actually, the reads themselves are lost in the process.  Only the sequences, the (averaged) quality, and the number of occurrences of the sequences, are kept.
+However, srnaMapper provides a unique read name, which is not the one given in the fastq file.
