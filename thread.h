@@ -4,6 +4,7 @@
 #include "constants.h"
 #include "parameters.h"
 #include "tree2.h"
+#include "fastq.h"
 #include "main.h"
 
 #define THREAD_BYTES_STEP 0x100000
