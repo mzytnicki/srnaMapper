@@ -1,6 +1,9 @@
 #ifndef FASTQ_H
 #define FASTQ_H
 
+#define _LARGEFILE64_SOURCE
+#include <sys/types.h>
+#include <unistd.h>
 #include "constants.h"
 #include "parameters.h"
 #include "tree.h"
