@@ -145,7 +145,7 @@ uint64_t addCell (tree_t *tree) {
     tree->nAllocated *= 2;
     //printf("reallocating cells: %zu to %zu...\n", tree->nCells, tree->nAllocated);
     if ((tree->cells = (cell_t *) realloc(tree->cells, tree->nAllocated * sizeof(cell_t))) == NULL) {
-      printf("Cannot allocate memory for tree of size %lu.\nExiting.\n", tree->nAllocated);
+      printf("Cannot allocate memory for tree of size %" PRIu64 ".\nExiting.\n", tree->nAllocated);
       exit(EXIT_FAILURE);
     }
   }

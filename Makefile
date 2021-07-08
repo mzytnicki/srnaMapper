@@ -1,6 +1,5 @@
 CC=gcc
 CPPC=g++
-LFLAGS+=-lrt
 ifdef DEBUG
 	OFLAGS=-O0 -march=native -g
 else ifdef PROF
@@ -13,7 +12,11 @@ else
 	OFLAGS=-O3 -DNDEBUG -march=native -g -msse2 -mavx
 endif
 CFLAGS+=-Wall -Wextra $(OFLAGS) -std=c11 -D_GNU_SOURCE
-FFLAGS+=-lm -lz -pthread -lrt
+UNAME_S:=$(shell uname -s)
+FFLAGS+=-lm -lz -pthread
+ifeq ($(UNAME_S),Linux)
+	FFLAGS+= -lrt
+endif
 ifdef ICC
 	CC=icc
 endif
@@ -22,23 +25,16 @@ BWA_O=Libs/bwa/utils.o Libs/bwa/kthread.o Libs/bwa/kstring.o Libs/bwa/ksw.o Libs
 
 BWA_C=$(BWA_O:.o=.c)
 
-TARGETS=srnaMapper # srnaCollapser srnaBuilder
+TARGETS=srnaMapper
 
 all: $(TARGETS)
 
 %.o : %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-srnaCollapser: srnaCollapser.c
-	$(CC) $(OFLAGS) -Wall -Wextra -o srnaCollapser srnaCollapser.c
-
 srnaMapper: srnaMapper.c $(BWA_O)
 	$(CC) $(CFLAGS) -Wall -Wextra -o srnaMapper.o -c srnaMapper.c
 	$(CC) $(CFLAGS) -Wall -Wextra -o srnaMapper srnaMapper.o $(BWA_O) $(FFLAGS)
 
-
-srnaBuilder: srnaBuilder.cpp
-	$(CPPC) $(CFLAGS) -o srnaBuilder srnaBuilder.cpp $(LFLAGS)
-
 clean:
-	rm -f $(TARGETS)
+	rm -f $(TARGETS) $(BWA_O)
