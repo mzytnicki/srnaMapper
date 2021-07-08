@@ -67,7 +67,7 @@ void parseCommandLine (int argc, char const **argv) {
   for (int i = 1; i < argc; ++i) {
     if (strcmp(argv[i], "-h") == 0) {
       printUsage();
-      exit(EXIT_FAILURE);
+      exit(EXIT_SUCCESS);
     }
     if (strcmp(argv[i], "-r") == 0) {
       ++i;
