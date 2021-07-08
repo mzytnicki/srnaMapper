@@ -1,6 +1,6 @@
 CC=gcc
 CPPC=g++
-LFLAGS=-lrt
+LFLAGS+=-lrt
 ifdef DEBUG
 	OFLAGS=-O0 -march=native -g
 else ifdef PROF
@@ -12,8 +12,8 @@ else ifdef VTUNE
 else
 	OFLAGS=-O3 -DNDEBUG -march=native -g -msse2 -mavx
 endif
-CFLAGS=-Wall -Wextra $(OFLAGS) -std=c11 -D_GNU_SOURCE
-FFLAGS=-lm -lz -pthread -lrt
+CFLAGS+=-Wall -Wextra $(OFLAGS) -std=c11 -D_GNU_SOURCE
+FFLAGS+=-lm -lz -pthread -lrt
 ifdef ICC
 	CC=icc
 endif
