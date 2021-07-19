@@ -1,10 +1,18 @@
 # Install
 
+## Manual install
+
 * Download the tool with `git clone https://github.com/mzytnicki/srnaMapper.git`
 * Go the directory with `cd srnaMapper`
 * Compile with `make`
 
 You should have the `zlib` library, and a C++11 compiler.
+
+## With bioconda
+
+If you have [bioconda](https://bioconda.github.io/) ready, you can install srnaMapper with:
+
+    conda install -c bioconda srnamapper
 
 
 # Generating the genome index
