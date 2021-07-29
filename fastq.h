@@ -83,24 +83,26 @@ bool readReadsFile (FILE *inFile, char *fileName, tree_t *tree, unsigned int fil
   char *line = NULL;
   char *sequence = NULL;
   char *quality = NULL;
-  size_t len = 0;
+  size_t sequenceLen = 0;
+  size_t lineLen = 0;
+  size_t qualityLen = 0;
   bool over = false;
   ssize_t nRead;
   if (! setToStart(inFile, posStart)) {
     return false;
   }
-  while (((nRead = getline(&line, &len, inFile)) != -1) && (! over)) {
-    nRead = getline(&sequence, &len, inFile);
+  while (((nRead = getline(&line, &lineLen, inFile)) != -1) && (! over)) {
+    nRead = getline(&sequence, &sequenceLen, inFile);
     if (nRead == -1) {
       fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
       exit(EXIT_FAILURE);
     }
-    nRead = getline(&line, &len, inFile);
+    nRead = getline(&line, &lineLen, inFile);
     if (nRead == -1) {
       fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
       exit(EXIT_FAILURE);
     }
-    nRead = getline(&quality, &len, inFile);
+    nRead = getline(&quality, &qualityLen, inFile);
     if (nRead == -1) {
       fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
       exit(EXIT_FAILURE);
