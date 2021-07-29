@@ -23,7 +23,7 @@ void createCell (cell_t *cell) {
     createEdge(&cell->edges[i]);
   }
   //printf("%u %zu %p\n", parameters->nReadsFiles, sizeof(count_t), cell);
-  cell->counts = (count_t *) calloc(parameters->nReadsFiles, sizeof(count_t));
+  cell->counts = (count_t *) callocOrDie(parameters->nReadsFiles, sizeof(count_t));
 }
 
 void freeCell (cell_t *cell) {

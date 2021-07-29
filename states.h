@@ -214,18 +214,18 @@ void clearStates (states_t *states) {
 }
 
 states_t *initializeStates(size_t treeSize) {
-  states_t *states           = (states_t *)     malloc(sizeof(states_t));
+  states_t *states           = (states_t *)     mallocOrDie(sizeof(states_t));
   states->depth              = treeSize + 1 + parameters->maxNErrors;
-  states->states             = (state_t **)     malloc((parameters->maxNErrors+1) * sizeof(states_t *));
-  states->firstState         = (size_t **)      malloc(states->depth * sizeof(size_t *));
-  states->nStates            = (size_t **)      malloc(states->depth * sizeof(size_t *));
-  states->allocatedNStates   = (size_t *)       malloc((parameters->maxNErrors+1) * sizeof(size_t));
-  states->nStatesPerPosition = (size_t *)       calloc(states->depth,  sizeof(size_t));
-  states->minErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
-  states->maxErrors          = (size_t *)       malloc(states->depth * sizeof(size_t));
+  states->states             = (state_t **)     mallocOrDie((parameters->maxNErrors+1) * sizeof(states_t *));
+  states->firstState         = (size_t **)      mallocOrDie(states->depth * sizeof(size_t *));
+  states->nStates            = (size_t **)      mallocOrDie(states->depth * sizeof(size_t *));
+  states->allocatedNStates   = (size_t *)       mallocOrDie((parameters->maxNErrors+1) * sizeof(size_t));
+  states->nStatesPerPosition = (size_t *)       callocOrDie(states->depth,  sizeof(size_t));
+  states->minErrors          = (size_t *)       mallocOrDie(states->depth * sizeof(size_t));
+  states->maxErrors          = (size_t *)       mallocOrDie(states->depth * sizeof(size_t));
   for (size_t depth = 0; depth < states->depth; ++depth) {
-    states->firstState[depth] = (size_t *) malloc((parameters->maxNErrors+1) * sizeof(size_t));
-    states->nStates[depth]    = (size_t *) malloc((parameters->maxNErrors+1) * sizeof(size_t));
+    states->firstState[depth] = (size_t *) mallocOrDie((parameters->maxNErrors+1) * sizeof(size_t));
+    states->nStates[depth]    = (size_t *) mallocOrDie((parameters->maxNErrors+1) * sizeof(size_t));
   }
   states->allocatedNStates[0] = treeSize + 3;
   states->states[0] = (state_t *) malloc(states->allocatedNStates[0] * sizeof(state_t));

@@ -52,8 +52,8 @@ void createTree2 (tree2_t *tree, size_t depth, uint32_t nCells, uint32_t nEdges,
   tree->nEdges = 0;
   tree->nAllocatedCells = nCells;
   tree->nAllocatedEdges = nEdges;
-  tree->cells = (cell2_t *) malloc(tree->nAllocatedCells * sizeof(cell2_t));
-  tree->edges = (edge_t *) malloc(tree->nAllocatedEdges * sizeof(edge_t));
+  tree->cells = (cell2_t *) mallocOrDie(tree->nAllocatedCells * sizeof(cell2_t));
+  tree->edges = (edge_t *) mallocOrDie(tree->nAllocatedEdges * sizeof(edge_t));
   createCellInfos(&tree->cellInfos, nQualities);
 }
 
@@ -215,7 +215,7 @@ void _printTree2 (const tree2_t *tree, char *read, size_t readPos, uint32_t cell
  */
 void printTree2 (const tree2_t *tree) {
   printf("Printing tree\n");
-  char *read = (char *) malloc((tree->depth+1) * sizeof(char));
+  char *read = (char *) mallocOrDie((tree->depth+1) * sizeof(char));
   cellVisitor_t cellVisitor;
   clearCellVisitor(&cellVisitor);
   read[tree->depth] = 0;

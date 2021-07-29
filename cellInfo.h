@@ -33,8 +33,8 @@ bool isEmptyCellInfo (const cellInfo_t *cellInfo) {
 
 void createCellInfo (cellInfo_t *cellInfo, size_t readSize, size_t nSamples) {
   ++readSize;
-  cellInfo->quality = (char *)    malloc(readSize * sizeof(char));
-  cellInfo->counts  = (count_t *) malloc(nSamples * sizeof(count_t));
+  cellInfo->quality = (char *)    mallocOrDie(readSize * sizeof(char));
+  cellInfo->counts  = (count_t *) mallocOrDie(nSamples * sizeof(count_t));
 }
 
 void freeCellInfo (cellInfo_t *cellInfo) {
@@ -78,9 +78,9 @@ void clearCellVisitor (cellVisitor_t *cellVisitor) {
 void createCellInfos (cellInfos_t *cellInfos, size_t nInfos /* , size_t readSize, size_t nSamples */) {
   cellInfos->nAllocatedCellInfos = nInfos;
   cellInfos->nCellInfos          = 0;
-  cellInfos->cellIds             = (uint32_t *) malloc((nInfos+1) * sizeof(uint32_t));  
-  cellInfos->counts              = (count_t *) malloc(nInfos * (parameters->nReadsFiles) * sizeof(count_t));  
-  cellInfos->qualities           = (char **) malloc(nInfos * sizeof(char *));  
+  cellInfos->cellIds             = (uint32_t *) mallocOrDie((nInfos+1) * sizeof(uint32_t));  
+  cellInfos->counts              = (count_t *) mallocOrDie(nInfos * (parameters->nReadsFiles) * sizeof(count_t));  
+  cellInfos->qualities           = (char **) mallocOrDie(nInfos * sizeof(char *));  
   cellInfos->cellIds[nInfos]     = NO_INFO;
 }
 

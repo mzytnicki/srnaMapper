@@ -3,6 +3,35 @@
 
 #include "constants.h"
 
+void notEnoughMemory () {
+  fprintf(stderr, "Not enough memory.  Exiting.\n");
+  exit(EXIT_FAILURE);
+}
+
+void *mallocOrDie (size_t size) {
+  void *p = malloc(size);
+  if (p == NULL) {
+    notEnoughMemory();
+  }
+  return p;
+}
+
+void *callocOrDie(size_t nmemb, size_t size) {
+  void *p = calloc(nmemb, size);
+  if (p == NULL) {
+    notEnoughMemory();
+  }
+  return p;
+}
+
+void *reallocOrDie(void *ptr, size_t size) {
+  void *p = realloc(ptr, size);
+  if (p == NULL) {
+    notEnoughMemory();
+  }
+  return p;
+}
+
 void trimSequence (size_t l, char *s) {
   s[l-1] = 0;
 }

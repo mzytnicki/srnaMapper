@@ -70,7 +70,7 @@ int main(int argc, char const ** argv) {
   parseCommandLine(argc, argv);
   createTree(&tree);
   createThreads(&threads);
-  FILE **inputFastqFiles = (FILE **) malloc(parameters->nReadsFiles * sizeof(FILE *));
+  FILE **inputFastqFiles = (FILE **) mallocOrDie(parameters->nReadsFiles * sizeof(FILE *));
   openFastqFiles(inputFastqFiles);
   startReadingThreads(&threads, &tree, inputFastqFiles);
   closeFastqFiles(inputFastqFiles);
@@ -97,7 +97,7 @@ int main(int argc, char const ** argv) {
   pac = idx->pac;
   bwt = idx->bwt;
   bns = idx->bns;
-  FILE **outputSamFiles = (FILE **) malloc(parameters->nOutputFileNames * sizeof(FILE *));
+  FILE **outputSamFiles = (FILE **) mallocOrDie(parameters->nOutputFileNames * sizeof(FILE *));
   openSamFiles(outputSamFiles);
   startMappingThreads(&threads, &tree2, outputSamFiles);
   closeSamFiles(outputSamFiles);

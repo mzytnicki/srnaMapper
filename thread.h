@@ -45,7 +45,7 @@ typedef struct {
 unsigned int threadStep;
 
 void createThreads (thread_t *threads) {
-  threads->threads = (pthread_t *) malloc((parameters->nThreads-1) * sizeof(pthread_t));
+  threads->threads = (pthread_t *) mallocOrDie((parameters->nThreads-1) * sizeof(pthread_t));
 }
 
 void freeThreads (thread_t *threads) {
@@ -80,8 +80,8 @@ void *mergingThreadMain (void *parametersVoid) {
 void startMergingThreads (thread_t *threads, tree_t *mainTree, tree_t *otherTrees) {
   unsigned int nTrees = parameters->nThreads;
   unsigned int nMerges = nTrees / 2;
-  mergeThreadParameters_t *threadParameters = (mergeThreadParameters_t *) malloc(nMerges * sizeof(mergeThreadParameters_t));
-  tree_t **allTrees = (tree_t **) malloc((parameters->nThreads) * sizeof(tree_t *));
+  mergeThreadParameters_t *threadParameters = (mergeThreadParameters_t *) mallocOrDie(nMerges * sizeof(mergeThreadParameters_t));
+  tree_t **allTrees = (tree_t **) mallocOrDie((parameters->nThreads) * sizeof(tree_t *));
   for (unsigned int threadId = 0; threadId < parameters->nThreads-1; ++threadId) {
     allTrees[threadId+1] = &otherTrees[threadId];
   }
@@ -130,8 +130,8 @@ void *readingThreadMain (void *parametersVoid) {
 
 void startReadingThreads (thread_t *threads, tree_t *tree, FILE **fastqFiles) {
   pthread_mutex_t incMutex                    = PTHREAD_MUTEX_INITIALIZER;
-  tree_t *trees                               = (tree_t *)                    malloc((parameters->nThreads-1) * sizeof(tree_t));
-  readingThreadParameters_t *threadParameters = (readingThreadParameters_t *) malloc(parameters->nThreads     * sizeof(readingThreadParameters_t));
+  tree_t *trees                               = (tree_t *)                    mallocOrDie((parameters->nThreads-1) * sizeof(tree_t));
+  readingThreadParameters_t *threadParameters = (readingThreadParameters_t *) mallocOrDie(parameters->nThreads     * sizeof(readingThreadParameters_t));
   if (pthread_mutex_init(&incMutex, NULL) != 0) {
     fprintf(stderr, "Error! Cannot initialize mutex.\nExiting.\n");
     exit(EXIT_FAILURE);
@@ -218,7 +218,7 @@ void *mappingThreadMain (void *parametersVoid) {
 void startMappingThreads (thread_t *threads, tree2_t *tree, FILE **samFiles) {
   pthread_mutex_t incMutex   = PTHREAD_MUTEX_INITIALIZER;
   pthread_mutex_t writeMutex = PTHREAD_MUTEX_INITIALIZER;
-  mappingThreadParameters_t *threadParameters = (mappingThreadParameters_t *) malloc(parameters->nThreads * sizeof(mappingThreadParameters_t));
+  mappingThreadParameters_t *threadParameters = (mappingThreadParameters_t *) mallocOrDie(parameters->nThreads * sizeof(mappingThreadParameters_t));
   if (pthread_mutex_init(&incMutex, NULL) != 0) {
     fprintf(stderr, "Error! Cannot initialize mutex.\nExiting.\n");
     exit(EXIT_FAILURE);

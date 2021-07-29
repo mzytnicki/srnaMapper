@@ -62,13 +62,13 @@ void clearPath (path_t *path) {
 }
 
 path_t *initializePath (size_t maxDepth) {
-  path_t *path         = (path_t *)         malloc(sizeof(path_t));
-  path->nucleotides    = (unsigned short *) malloc(maxDepth * sizeof(unsigned short));
-  path->children       = (unsigned short *) malloc(maxDepth * sizeof(unsigned short));
-  path->cellIds        = (uint32_t *)       malloc((maxDepth+1) * sizeof(uint32_t));
-  path->edges          = (edge_t *)        malloc((maxDepth+1) * sizeof(edge_t));
+  path_t *path         = (path_t *)         mallocOrDie(sizeof(path_t));
+  path->nucleotides    = (unsigned short *) mallocOrDie(maxDepth * sizeof(unsigned short));
+  path->children       = (unsigned short *) mallocOrDie(maxDepth * sizeof(unsigned short));
+  path->cellIds        = (uint32_t *)       mallocOrDie((maxDepth+1) * sizeof(uint32_t));
+  path->edges          = (edge_t *)         mallocOrDie((maxDepth+1) * sizeof(edge_t));
   //path->edges          = (edge2_t *)        malloc((maxDepth+1) * sizeof(edge2_t));
-  path->read           = (char *)           malloc((maxDepth+1) * sizeof(char));
+  path->read           = (char *)           mallocOrDie((maxDepth+1) * sizeof(char));
   path->maxDepth       = maxDepth;
   path->cellIds[0]     = 0;
   path->read[maxDepth] = 0;

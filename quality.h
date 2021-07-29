@@ -22,7 +22,7 @@ typedef struct {
 
 void createQualities (quality_t *qualities) {
   qualities->nAllocated = INIT_N_QUALITIES;
-  qualities->qualities  = (char **) calloc(qualities->nAllocated, sizeof(char *));
+  qualities->qualities  = (char **) callocOrDie(qualities->nAllocated, sizeof(char *));
   qualities->nQualities = 0;
 }
 

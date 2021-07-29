@@ -32,7 +32,7 @@ typedef struct {
 
 void createTree (tree_t *tree) {
   tree->nAllocated = INIT_N_CELLS;
-  tree->cells      = (cell_t *) malloc(tree->nAllocated * sizeof(cell_t));
+  tree->cells      = (cell_t *) mallocOrDie(tree->nAllocated * sizeof(cell_t));
   tree->depth      = TREE_BASE_SIZE;
   tree->nCells     = N_TREE_BASE;
   tree->nEdges     = 0;
@@ -77,14 +77,14 @@ void _computeTreeStats (const tree_t *tree, unsigned int **stats, unsigned int *
 
 void computeTreeStats (const tree_t *tree) {
   //unsigned int **stats = (unsigned int **) malloc((tree->depth+1) * N_NUCLEOTIDES * sizeof(unsigned int *));
-  unsigned int **stats = (unsigned int **) malloc((tree->depth+1) * sizeof(unsigned int *));
+  unsigned int **stats = (unsigned int **) mallocOrDie((tree->depth+1) * sizeof(unsigned int *));
   unsigned int statsSum[N_NUCLEOTIDES] = { 0, 0, 0, 0 };
-  unsigned int *branchSizes = (unsigned int *) calloc(tree->depth+1, sizeof(unsigned int));
+  unsigned int *branchSizes = (unsigned int *) callocOrDie(tree->depth+1, sizeof(unsigned int));
   unsigned int nNodes = 0;
   unsigned int nQualities = 0;
   unsigned int s;
   for (size_t depth = 0; depth <= tree->depth; ++depth) {
-    stats[depth] = (unsigned int *) calloc(N_NUCLEOTIDES + 1, sizeof(unsigned int));
+    stats[depth] = (unsigned int *) callocOrDie(N_NUCLEOTIDES + 1, sizeof(unsigned int));
   }
   for (size_t cellId = 0; cellId < N_TREE_BASE; ++cellId) {
     _computeTreeStats(tree, stats, statsSum, branchSizes, 0, &tree->cells[cellId], TREE_BASE_SIZE, &nNodes, &nQualities);
@@ -374,7 +374,7 @@ void printTree (char *fileName, const tree_t *tree) {
     exit(EXIT_FAILURE);
   }
   uint64_t readId = 0;
-  char *read = (char *) malloc((tree->depth+1) * sizeof(char));
+  char *read = (char *) mallocOrDie((tree->depth+1) * sizeof(char));
   read[tree->depth] = 0;
   _printTree(tree, outFile, &readId, read, 0, 0);
   free(read);

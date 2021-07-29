@@ -60,8 +60,8 @@ void parseCommandLine (int argc, char const **argv) {
       ++parameters->nOutputFileNames;
     }
   }
-  parameters->readsFileNames     = (char **) malloc(parameters->nReadsFiles      * sizeof(char *));
-  parameters->outputSamFileNames = (char **) malloc(parameters->nOutputFileNames * sizeof(char *));
+  parameters->readsFileNames     = (char **) mallocOrDie(parameters->nReadsFiles      * sizeof(char *));
+  parameters->outputSamFileNames = (char **) mallocOrDie(parameters->nOutputFileNames * sizeof(char *));
   parameters->nReadsFiles        = 0;
   parameters->nOutputFileNames   = 0;
   for (int i = 1; i < argc; ++i) {

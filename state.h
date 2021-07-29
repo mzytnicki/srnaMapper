@@ -50,8 +50,8 @@ void printState (state_t *state, size_t maxDepth) {
   //assert(getStateInterval(state)->k <= getStateInterval(state)->l);
   size_t s = 0;
   char *tmpSeq1, *tmpSeq2;
-  tmpSeq1 = (char *) malloc(255);
-  tmpSeq2 = (char *) malloc(255);
+  tmpSeq1 = (char *) mallocOrDie(255);
+  tmpSeq2 = (char *) mallocOrDie(255);
   tmpSeq1[maxDepth] = 0;
   tmpSeq2[maxDepth] = 0;
   int is_rev;
