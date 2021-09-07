@@ -80,18 +80,21 @@ bool isPastEnd (off_t posCurrent, off_t posEnd) {
  * Return false if we reach EOF
  */
 bool readReadsFile (FILE *inFile, char *fileName, tree_t *tree, unsigned int fileId, off_t posStart, off_t posEnd) {
-  char *line = NULL;
-  char *sequence = NULL;
-  char *quality = NULL;
+  char *line         = NULL;
+  char *name         = NULL;
+  char *sequence     = NULL;
+  char *quality      = NULL;
+  size_t nameLen     = 0;
   size_t sequenceLen = 0;
-  size_t lineLen = 0;
-  size_t qualityLen = 0;
-  bool over = false;
+  size_t lineLen     = 0;
+  size_t qualityLen  = 0;
+  bool over          = false;
   ssize_t nRead;
+  ssize_t nName;
   if (! setToStart(inFile, posStart)) {
     return false;
   }
-  while (((nRead = getline(&line, &lineLen, inFile)) != -1) && (! over)) {
+  while (((nName = getline(&name, &nameLen, inFile)) != -1) && (! over)) {
     nRead = getline(&sequence, &sequenceLen, inFile);
     if (nRead == -1) {
       fprintf(stderr, "Input file '%s' is corrupted.\nAborting.\n", fileName);
@@ -109,12 +112,14 @@ bool readReadsFile (FILE *inFile, char *fileName, tree_t *tree, unsigned int fil
     }
     assert(strlen(sequence) == strlen(quality));
     assert(strlen(sequence) == (unsigned long) nRead);
+    trimSequence(nName, name);
     trimSequence(nRead, sequence);
     trimSequence(nRead, quality);
-    addSequence(tree, nRead-1, sequence, quality, fileId);
+    addSequence(tree, nRead-1, sequence, quality, name+1, nName-1, fileId); // Discard the first '@' in the read name
     over = isPastEnd(ftello(inFile), posEnd);
   }
   free(line);
+  free(name);
   free(sequence);
   free(quality);
   return over;

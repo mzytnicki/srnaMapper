@@ -17,10 +17,12 @@
  *  - the quality
  *  - the counts
  */
+/*
 typedef struct {
   uint32_t      cellId;
   char         *quality;
   count_t      *counts;
+  char        **readNames;
 } cellInfo_t;
 
 void createEmptyCellInfo (cellInfo_t *cellInfo) {
@@ -33,13 +35,18 @@ bool isEmptyCellInfo (const cellInfo_t *cellInfo) {
 
 void createCellInfo (cellInfo_t *cellInfo, size_t readSize, size_t nSamples) {
   ++readSize;
-  cellInfo->quality = (char *)    mallocOrDie(readSize * sizeof(char));
-  cellInfo->counts  = (count_t *) mallocOrDie(nSamples * sizeof(count_t));
+  cellInfo->quality   = (char *)    mallocOrDie(readSize * sizeof(char));
+  cellInfo->counts    = (count_t *) mallocOrDie(nSamples * sizeof(count_t));
+  cellInfo->readNames = (char **)   mallocOrDie(nSamples * sizeof(char *));
 }
 
 void freeCellInfo (cellInfo_t *cellInfo) {
   free(cellInfo->quality);
   free(cellInfo->counts);
+  for (unsigned int readFileId = 0; readFileId < parameters->nReadsFiles; ++readFileId) {
+    free(cellInfo->readNames[readFileId]);
+  }
+  free(cellInfo->readNames);
 }
 
 void setCellInfo (cellInfo_t *cellInfo, uint32_t cellId, char *quality, size_t readSize, count_t *counts, unsigned int nSamples) {
@@ -49,6 +56,10 @@ void setCellInfo (cellInfo_t *cellInfo, uint32_t cellId, char *quality, size_t r
   memcpy(cellInfo->counts,  counts,  nSamples * sizeof(count_t));
 }
 
+void setCellInfoReadNames (cellInfo_t *cellInfo, char *readNames, size_t length, unsigned int sampleId) {
+  strndup(cellInfo->readNames[sampleId], readNames, length);
+}
+
 void printCellInfo (const cellInfo_t *cellInfo) {
   printf("cell id: %" PRIu32 ", qual: %s, counts (%p): ", cellInfo->cellId, cellInfo->quality, cellInfo->counts);
   for (unsigned int countId = 0; countId < parameters->nReadsFiles; ++countId) {
@@ -56,6 +67,7 @@ void printCellInfo (const cellInfo_t *cellInfo) {
   }
   printf("\n");
 }
+*/
 
 /**
  * CellInfos store all the cell infos in a vector.
@@ -67,6 +79,7 @@ typedef struct {
   uint32_t     *cellIds;
   char        **qualities;
   count_t      *counts;
+  char        **readNames;
 } cellInfos_t;
 
 typedef size_t cellVisitor_t;
@@ -81,6 +94,7 @@ void createCellInfos (cellInfos_t *cellInfos, size_t nInfos /* , size_t readSize
   cellInfos->cellIds             = (uint32_t *) mallocOrDie((nInfos+1) * sizeof(uint32_t));  
   cellInfos->counts              = (count_t *) mallocOrDie(nInfos * (parameters->nReadsFiles) * sizeof(count_t));  
   cellInfos->qualities           = (char **) mallocOrDie(nInfos * sizeof(char *));  
+  cellInfos->readNames           = (char **) mallocOrDie(nInfos * sizeof(char *));  
   cellInfos->cellIds[nInfos]     = NO_INFO;
 }
 
@@ -91,9 +105,17 @@ void freeCellInfos (cellInfos_t *cellInfos) {
   free(cellInfos->cellIds);
   free(cellInfos->qualities);
   free(cellInfos->counts);
+  for (size_t cellInfosId = 0; cellInfosId < cellInfos->nCellInfos; ++cellInfosId) {
+    free(cellInfos->readNames[cellInfosId]);
+  }
+  free(cellInfos->readNames);
 }
 
-void addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t readSize, count_t *counts /*, unsigned int nSamples */) {
+/**
+ * Allocate memory for a new cellInfo, and copy content.
+ * Returns the buffer of the read names.
+ */
+char *addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t readSize, count_t *counts, size_t readNameLength) {
   assert(cellInfos->nCellInfos < cellInfos->nAllocatedCellInfos);
   //printf("Setting cell info #%" PRIu32 "\n", cellId);
   cellInfos->cellIds[cellInfos->nCellInfos] = cellId;
@@ -104,7 +126,9 @@ void addCellInfo (cellInfos_t *cellInfos, uint32_t cellId, char *quality, size_t
     exit(EXIT_FAILURE);
   }
   memcpy(cellInfos->qualities[cellInfos->nCellInfos], quality, readSize+1);
+  cellInfos->readNames[cellInfos->nCellInfos] = (char *) mallocOrDie(readNameLength);
   ++cellInfos->nCellInfos;
+  return cellInfos->readNames[cellInfos->nCellInfos-1];
 }
 
 //cellInfo_t *getCellInfo (uint32_t cellId, cellVisitor_t *cellVisitor) {
@@ -133,6 +157,10 @@ count_t *getCounts (const cellInfos_t *cellInfos, cellVisitor_t cellVisitor) {
 
 char *getQuality (const cellInfos_t *cellInfos, cellVisitor_t cellVisitor) {
   return cellInfos->qualities[cellVisitor];
+}
+
+char *getCellInfoReadNames (const cellInfos_t *cellInfos, cellVisitor_t cellVisitor) {
+  return cellInfos->readNames[cellVisitor];
 }
 
 #endif

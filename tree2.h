@@ -138,7 +138,9 @@ void _copyTree (tree2_t *tree2, uint32_t cellId2, const tree_t *tree, uint64_t c
   unsigned short childId = 0;
   if ((quality = findQuality(&tree->qualities, cellId)) != NULL) {
     //printf("  Adding cell info @ %"PRIu32"\n", cellId2);
-    addCellInfo(&tree2->cellInfos, cellId2, quality, depth, cell->counts);
+    size_t readNameLength = getReadNamesSize(tree, cellId);
+    char *readNameBuffer = addCellInfo(&tree2->cellInfos, cellId2, quality, depth, cell->counts, readNameLength);
+    copyReadNames(tree, cellId, readNameBuffer);
   }
   //if (depth > TREE_BASE_SIZE) printf("  Copying cell %" PRIu64 " to %" PRIu32 "/%" PRIu32 "\n", cellId, cellId2, tree2->nAllocatedCells);
   for (unsigned short nt = 0; nt < N_NUCLEOTIDES; ++nt) {

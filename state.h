@@ -93,7 +93,7 @@ void printState (state_t *state, size_t maxDepth) {
   int64_t  pos = bwa_sa2pos(bns, bwt, getStateInterval(state)->k, maxDepth, &strand);
   int      rid = bns_pos2rid(bns, pos);
   pos          = pos - bns->anns[rid].offset + 1;
-  printf("\t\t\t\t%" PRId64 "-%" PRIu64 " (%p, %s:%"PRIu64"): %s (%c/%c -> %u)\n", getStateInterval(state)->k, getStateInterval(state)->l, state, bns->anns[rid].name, pos, tmpSeq2, CIGAR[state->trace], "ACGT"[state->nucleotide], state->previousState);
+  printf("\t\t\t\t%" PRId64 "-%" PRIu64 " (%p, %s:%" PRIu64 "): %s (%c/%c -> %u)\n", getStateInterval(state)->k, getStateInterval(state)->l, state, bns->anns[rid].name, pos, tmpSeq2, CIGAR[state->trace], "ACGT"[state->nucleotide], state->previousState);
 }
 
 bool areStatesEqual (state_t *state1, state_t *state2) {

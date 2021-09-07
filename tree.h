@@ -4,9 +4,11 @@
 #include "constants.h"
 #include "parameters.h"
 #include "helper.h"
+#include "vector.h"
 #include "edge.h"
 #include "cell.h"
 #include "quality.h"
+#include "readNames.h"
 
 /******* Tree type *******/
 /**
@@ -22,12 +24,13 @@
  */
 
 typedef struct {
-  size_t    depth;
-  cell_t   *cells;
-  uint64_t  nCells;
-  uint64_t  nEdges;
-  uint64_t  nAllocated;
-  quality_t qualities;
+  size_t      depth;
+  cell_t     *cells;
+  uint64_t    nCells;
+  uint64_t    nEdges;
+  uint64_t    nAllocated;
+  quality_t   qualities;
+  vector_t   *readNames;
 } tree_t;
 
 void createTree (tree_t *tree) {
@@ -36,10 +39,14 @@ void createTree (tree_t *tree) {
   tree->depth      = TREE_BASE_SIZE;
   tree->nCells     = N_TREE_BASE;
   tree->nEdges     = 0;
+  tree->readNames  = (vector_t *) mallocOrDie(parameters->nReadsFiles * sizeof(vector_t));
   for (size_t i = 0; i < N_TREE_BASE; ++i) {
     createCell(&tree->cells[i]);
   }
   createQualities(&tree->qualities);
+  for (unsigned int readFileId = 0; readFileId < parameters->nReadsFiles; ++readFileId) {
+    createVector(&tree->readNames[readFileId], sizeof(readNames_t), INIT_N_QUALITIES);
+  }
 }
 
 void _computeTreeStats (const tree_t *tree, unsigned int **stats, unsigned int *statsSum, unsigned int *branchSizes, unsigned int branchSize, cell_t *cell, size_t depth, unsigned int *nNodes, unsigned int *nQualities) {
@@ -130,9 +137,42 @@ void freeTree (tree_t *tree) {
   }
   free(tree->cells);
   freeQualities(&tree->qualities);
+  for (unsigned int readFileId = 0; readFileId < parameters->nReadsFiles; ++readFileId) {
+    for (uint64_t elementId = 0; elementId < tree->readNames->nAllocated; ++elementId) {
+      readNames_t *readNames = (readNames_t *) getVectorElement(&tree->readNames[readFileId], elementId);
+      if (readNames != 0) {
+        freeReadName(readNames);
+      }
+    }
+    freeVector(&tree->readNames[readFileId]);
+  }
+  free(tree->readNames);
   tree->nAllocated = 0;
   tree->depth = 0;
   tree->nCells = 0;
+}
+
+/**
+ * Compute the total length of the read names
+ */
+size_t getReadNamesSize (const tree_t *tree, size_t cellId) {
+  size_t size = 0;
+  for (unsigned int readFileId = 0; readFileId < parameters->nReadsFiles; ++readFileId) {
+    readNames_t *readNames = (readNames_t *) getVectorElement(&tree->readNames[readFileId], cellId);
+    size += readNames->length;
+  }
+  return size;
+}
+
+/**
+ * Copy the concatenated read names to the given pointer.  Supposes that enough memory has been allocated.
+ */
+void copyReadNames (const tree_t *tree, size_t cellId, char *destination) {
+  for (unsigned int readFileId = 0; readFileId < parameters->nReadsFiles; ++readFileId) {
+    readNames_t *readNames = (readNames_t *) getVectorElement(&tree->readNames[readFileId], cellId);
+    memcpy(destination, readNames->readNames, readNames->length);
+    destination += readNames->length;
+  }
 }
 
 void setQuality (tree_t *tree, size_t cellId, size_t l, char *quality, unsigned int fileId) {
@@ -292,7 +332,7 @@ uint64_t addSequenceFollow (tree_t *tree, uint64_t cellId, char *binarySequence,
   return cellId;
 }
 
-bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigned int fileId) {
+bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, char *readName, size_t readNameLength, unsigned int fileId) {
   uint64_t cellId = 0;
   int sequenceId = l - 1;
   assert(strlen(sequence) == strlen(quality));
@@ -310,9 +350,10 @@ bool addSequence (tree_t *tree, size_t l, char *sequence, char *quality, unsigne
   }
   assert(cellId < N_TREE_BASE);
   //printf("First id: %lu, %s\n", cellId, sequence);
-  assert(cellId < N_TREE_BASE);
   cellId = addSequenceFollow(tree, cellId, sequence, sequenceId);
   setQuality(tree, cellId, l, quality, fileId);
+  readNames_t *readNames = (readNames_t *) getVectorElement(&tree->readNames[fileId], cellId);
+  addReadName(readNames, readName, readNameLength);
   tree->depth = MAX(tree->depth, l);
   return true;
 }
@@ -537,9 +578,19 @@ void mergeTreeNodes (tree_t *tree1, uint64_t cellId1, tree_t *tree2, uint64_t ce
   }
   if (quality1 == NULL) {
     addQuality(&tree1->qualities, cellId1, strlen(quality2), quality2);
+    for (unsigned int readFileId = 0; readFileId < parameters->nReadsFiles; ++readFileId) {
+      readNames_t *readNames1 = (readNames_t *) getVectorElement(&tree1->readNames[readFileId], cellId1);
+      readNames_t *readNames2 = (readNames_t *) getVectorElement(&tree2->readNames[readFileId], cellId2);
+      setReadName(readNames1, readNames2->readNames, readNames2->length);
+    }
     return;
   }
   mergeQualities(quality1, quality2, strlen(quality1));
+  for (unsigned int readFileId = 0; readFileId < parameters->nReadsFiles; ++readFileId) {
+    readNames_t *readNames1 = (readNames_t *) getVectorElement(&tree1->readNames[readFileId], cellId1);
+    readNames_t *readNames2 = (readNames_t *) getVectorElement(&tree2->readNames[readFileId], cellId2);
+    appendReadName(readNames1, readNames2->readNames, readNames2->length);
+  }
 }
 
 /**

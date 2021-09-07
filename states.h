@@ -98,7 +98,7 @@ void updateCounts (states_t *states, size_t depth, size_t nErrors, size_t nState
     while (nStatesPerError >= states->allocatedNStates[nErrors]-1) {
       states->allocatedNStates[nErrors] *= 2;
     }
-    states->states[nErrors] = (state_t *) realloc(states->states[nErrors], states->allocatedNStates[nErrors] * sizeof(state_t));
+    states->states[nErrors] = (state_t *) reallocOrDie(states->states[nErrors], states->allocatedNStates[nErrors] * sizeof(state_t));
     //printf("Reallocating states with %zu errors to %zu states\n", nErrors, states->allocatedNStates[nErrors]);
     if (states->states[nErrors] == NULL) {
       fprintf(stderr, "Memory error: Cannot allocate an array of States for errors %zu of size %zu * %zu\n", nErrors, states->allocatedNStates[nErrors], sizeof(state_t));

@@ -18,7 +18,7 @@
 /**
  * Print read in SAM format
  */
-void printRead (states_t *states, path_t *path, count_t *counts, char *quality, outputSam_t *outputSam) {
+void printRead (states_t *states, path_t *path, count_t *counts, char *quality, char *readNames, outputSam_t *outputSam) {
   assert(path->depth <= path->maxDepth);
   assert(quality != NULL);
   assert(counts != NULL);
@@ -54,6 +54,7 @@ void printRead (states_t *states, path_t *path, count_t *counts, char *quality, 
     printState(getState(states, i, 0, 0), i);
   }
   */
+  outputSam->readNames = readNames;
   memcpy(outputSam->forwardSeq,  seq,  (depth+1) * sizeof(char));
   memcpy(outputSam->forwardQual, qual, (depth+1) * sizeof(char));
   for (size_t i = 0; i < nStates; ++i) {
@@ -337,7 +338,7 @@ void _map (const tree2_t *tree, states_t *states, path_t *path, cellVisitor_t *c
       //if (path->depth > TREE_BASE_SIZE) printPath(path);
       //if ((cellInfo = getCellInfoTree(path->cellIds[path->nCells], cellVisitor)) != NULL) {
       if (getCellInfoTree(tree, path->cellIds[path->nCells], cellVisitor)) {
-        printRead(states, path, getCounts(&tree->cellInfos, *cellVisitor), getQuality(&tree->cellInfos, *cellVisitor), outputSam);
+        printRead(states, path, getCounts(&tree->cellInfos, *cellVisitor), getQuality(&tree->cellInfos, *cellVisitor), getCellInfoReadNames(&tree->cellInfos, *cellVisitor), outputSam);
       }
     }
   }
