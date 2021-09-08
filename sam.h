@@ -72,7 +72,7 @@ void printSamLine (const samLine_t *samLine) {
 /**
  * Copy one SAM information to the buffer
  */
-void copyToSamLine (samLine_t *samLine, size_t nCounts, count_t *readIds, count_t *counts, char *readNames, unsigned int flag, int rid, int64_t pos, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, char *cigar, char *sequence, char *quality) {
+void copyToSamLine (samLine_t *samLine, size_t nCounts, count_t *readIds, count_t *counts, char *readNames, unsigned int flag, int rid, int64_t pos, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, const char *cigar, const char *sequence, const char *quality) {
   memcpy(samLine->readIds,  readIds,  nCounts * sizeof(count_t));
   samLine->readNames = readNames;
   memcpy(samLine->counts,   counts,   nCounts * sizeof(count_t));
@@ -339,7 +339,7 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
 /**
  * Add a new SAM information to the buffer
  */
-void addSamLine (outputSam_t *outputSam, unsigned int flag, int rid, int64_t pos, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, char *cigar, char *sequence, char *quality) {
+void addSamLine (outputSam_t *outputSam, unsigned int flag, int rid, int64_t pos, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, const char *cigar, const char *sequence, const char *quality) {
   assert(outputSam->nSamLines < outputSam->maxSamLines);
   for (unsigned int fileId = 0; fileId < parameters->nOutputFileNames; ++fileId) {
     size_t readNamesOffset = 0;
