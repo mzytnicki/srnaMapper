@@ -89,16 +89,12 @@ typedef struct {
 } readNames_t;
 
 void setReadName (readNames_t *readNames, char *readName, size_t length) {
-  // Account for terminal '\0'
-  ++length;
   readNames->readNames = (char *) mallocOrDie(length * sizeof(char));
   memcpy(readNames->readNames, readName, length);
   readNames->length = length;
 }
 
 void appendReadName (readNames_t *readNames, char *readName, size_t length) {
-  // Account for terminal '\0'
-  ++length;
   size_t newLength = length + readNames->length;
   readNames->readNames = (char *) reallocOrDie(readNames->readNames, newLength * sizeof(char));
   memcpy(readNames->readNames + readNames->length, readName, length);
