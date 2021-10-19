@@ -220,7 +220,7 @@ states_t *initializeStates(size_t treeSize) {
   states->firstState         = (size_t **)      mallocOrDie((states->depth+1) * sizeof(size_t *)); // Allocate one unit more for the backtrack.
   states->nStates            = (size_t **)      mallocOrDie(states->depth * sizeof(size_t *));
   states->allocatedNStates   = (size_t *)       mallocOrDie((parameters->maxNErrors+1) * sizeof(size_t));
-  states->nStatesPerPosition = (size_t *)       callocOrDie(states->depth,  sizeof(size_t));
+  states->nStatesPerPosition = (size_t *)       callocOrDie(states->depth+1,  sizeof(size_t)); // Allocate one unit more for the backtrack.
   states->minErrors          = (size_t *)       mallocOrDie(states->depth * sizeof(size_t));
   states->maxErrors          = (size_t *)       mallocOrDie(states->depth * sizeof(size_t));
   for (size_t depth = 0; depth < states->depth; ++depth) {
@@ -248,10 +248,10 @@ states_t *initializeStates(size_t treeSize) {
 }
 
 void backtrackStates(states_t *states, size_t level) {
-  printf("\t\t\tBacktracking to level %zu\n", level);
+  //printf("\t\t\tBacktracking to level %zu\n", level);
   //printStates(states, level);
   for (size_t i = level; i <= states->depth; ++i) {
-    printf("\t\t\t\tnow %zu/%zu -> %zu\n", i, states->depth, states->nStatesPerPosition[i]); fflush(stdout);
+    //printf("\t\t\t\tnow %zu/%zu -> %zu\n", i, states->depth, states->nStatesPerPosition[i]); fflush(stdout);
     if (states->nStatesPerPosition[i] == 0) {
       //printf("\t\t\tFinally2\n");
       //printStates(states, level);
