@@ -17,6 +17,8 @@
 #include "Libs/bwa/bwa.h"
 #include "Libs/bwa/bwase.h"
 
+#define VERSION "1.0.8"
+
 #define DEPTH_SHORT_CUT 21
 
 #define _get_pac(pac, l) ((pac)[(l)>>2]>>((~(l)&3)<<1)&3)

@@ -69,6 +69,10 @@ void parseCommandLine (int argc, char const **argv) {
       printUsage();
       exit(EXIT_SUCCESS);
     }
+    if (strcmp(argv[i], "-v") == 0) {
+      printf("%s v%s\n", argv[0], VERSION);
+      exit(EXIT_SUCCESS);
+    }
     if (strcmp(argv[i], "-r") == 0) {
       ++i;
       parameters->readsFileNames[parameters->nReadsFiles] = strdup(argv[i]);
