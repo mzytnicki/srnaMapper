@@ -34,6 +34,8 @@ void printUsage () {
        "  -f int: low complexity threshold, more is more lenient (default: 6)\n"
        "  -u: if set, print all the mapped reads in a unique SAM file (with the counts for each sample)\n"
        "  -s int: set the random seed (time otherwise)\n"
+       "  -v: print the version and exit\n"
+       "  -h: print this help and exit\n"
        "Notes:\n"
        "  The '-r' option should be repeated once per input file.\n"
        "  Unless the the '-u' option is set, the '-o' option should also be repeated once per input file.\n");
