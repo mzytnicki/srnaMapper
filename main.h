@@ -75,15 +75,16 @@ void printRead (states_t *states, path_t *path, count_t *counts, char *quality, 
   //printf("Read: %s, read length: %zu\n", forwardSeq, readLength);
   //printStates(states, depth);
   for (size_t stateId = 0; stateId < nStates; ++stateId) {
+    size_t readSize = path->depth;
     if (nErrors == 0) {
       setCigarNoError(outputSam, path->depth);
     }
     else {
       //printf("depth: %zu\n", depth);
-      computeBacktrace(states, path->depth, nErrors, stateId, outputSam);
+      readSize = computeBacktrace(states, path->depth, nErrors, stateId, outputSam);
       computeCigar(outputSam);
     }
-    printReadState(&theseStates[stateId], path->depth, nHits, hitId, nErrors, outputSam);
+    printReadState(&theseStates[stateId], readSize, nHits, hitId, nErrors, outputSam);
     hitId += theseStates[stateId].interval.l - theseStates[stateId].interval.k + 1;
   }
   removeDuplicatesOutputLines(outputSam, nHits);

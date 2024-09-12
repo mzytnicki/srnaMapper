@@ -270,9 +270,10 @@ void backtrackStates(states_t *states, size_t level) {
 }
 
 
-void computeBacktrace (states_t *states, int depth, int nErrors, size_t stateId, outputSam_t *outputSam) {
+size_t computeBacktrace (states_t *states, int depth, int nErrors, size_t stateId, outputSam_t *outputSam) {
   state_t *state;
   char cigar;
+  int readSize = 0;
   outputSam->backtraceSize = 0;
   //printf("Compute BT\n");
   //while ((depth >= 0) || (nErrors > 0)) {
@@ -290,11 +291,13 @@ void computeBacktrace (states_t *states, int depth, int nErrors, size_t stateId,
     }
     if (hasTrace(state, MATCH)) {
       --depth;
+      ++readSize;
     }
     else if (hasTrace(state, MISMATCH)) {
       --depth;
       assert(nErrors > 0);
       --nErrors;
+      ++readSize;
     }
     else if (hasTrace(state, INSERTION)) {
       --depth;
@@ -303,12 +306,14 @@ void computeBacktrace (states_t *states, int depth, int nErrors, size_t stateId,
     }
     else if (hasTrace(state, DELETION)) {
       --nErrors;
+      ++readSize;
     }
     else {
       assert(false);
     }
     stateId = state->previousState;
   }
+  return readSize;
 }
 
 void freeStates(states_t *states) {
