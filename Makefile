@@ -2,6 +2,8 @@ CC=gcc
 CPPC=g++
 ifdef DEBUG
 	OFLAGS=-O0 -march=native -g
+else ifdef SAN
+	OFLAGS=-ggdb -fsanitize=address -fno-omit-frame-pointer -static-libgcc -static-libasan
 else ifdef PROF
 	OFLAGS=-O3 -pg
 else ifdef PERF
@@ -37,4 +39,4 @@ srnaMapper: srnaMapper.c $(BWA_O)
 	$(CC) $(CFLAGS) -Wall -Wextra -o srnaMapper srnaMapper.o $(BWA_O) $(FFLAGS)
 
 clean:
-	rm -f $(TARGETS) $(BWA_O)
+	rm -f $(TARGETS) # $(BWA_O)

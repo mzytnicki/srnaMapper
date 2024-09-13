@@ -2,7 +2,7 @@
 
 ## Manual install
 
-* Download the tool with `git clone https://github.com/mzytnicki/srnaMapper.git`
+* Download the tool with `git clone --recurse-submodules https://github.com/mzytnicki/srnaMapper.git`
 * Go the directory with `cd srnaMapper`
 * Compile with `make`
 

@@ -1,0 +1,3 @@
+[submodule "Libs/bwa"]
+	path = Libs/bwa
+	url = https://github.com/lh3/bwa.git
