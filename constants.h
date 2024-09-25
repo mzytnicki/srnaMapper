@@ -17,7 +17,7 @@
 #include "Libs/bwa/bwa.h"
 #include "Libs/bwa/bwase.h"
 
-#define VERSION "1.0.8"
+#define VERSION "1.0.11"
 
 #define DEPTH_SHORT_CUT 21
 
