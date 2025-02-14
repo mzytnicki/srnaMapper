@@ -100,40 +100,9 @@ bool areStatesEqual (state_t *state1, state_t *state2) {
   return ((getStateInterval(state1)->k == getStateInterval(state2)->k) && (getStateInterval(state1)->l == getStateInterval(state2)->l));
 }
 
-int intervalComp (const bwtinterval_t *i1, const bwtinterval_t *i2) {
-  int i = i2->k - i1->k;
-  if (i != 0) {
-    return i;
-  }
-  return i2->l - i1->l;
-}
-
-int stateComp (const state_t *state1, const state_t *state2) {
-  int i = getStateInterval((state_t *) state1)->k - (getStateInterval((state_t *) state2)->k);
-  if (i != 0) {
-    return i;
-  }
-  return (getStateInterval((state_t *) state1)->l - (getStateInterval((state_t *) state2)->l));
-}
-
 int sortCompareStates (const void *state1, const void *state2) {
   return (getStateInterval((state_t *) state1)->k - (getStateInterval((state_t *) state2)->k));
 }
-
-bool canMerge (state_t *state1, state_t *state2) {
-  if ((getStateInterval(state1)->l+1 < getStateInterval(state2)->k) || (getStateInterval(state1)->k+1 > getStateInterval(state2)->l)) {
-    return false;
-  }
-  getStateInterval(state1)->k = MIN(getStateInterval(state1)->k, getStateInterval(state2)->k);
-  getStateInterval(state1)->l = MAX(getStateInterval(state1)->l, getStateInterval(state2)->l);
-  return true;
-}
-
-void swapStates(state_t *s1, state_t *s2) { 
-  state_t tmp = *s1; 
-  *s1 = *s2; 
-  *s2 = tmp; 
-} 
 
 /**
  * Print all the reads in a given state

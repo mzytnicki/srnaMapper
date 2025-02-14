@@ -165,37 +165,118 @@ state_t *_addState (states_t *states, size_t depth, size_t nErrors, bwtinterval_
   return state;
 }
 
+size_t getNIndels (states_t *states, int depth, int nErrors, size_t stateId) {
+  state_t *state;
+  size_t nIndels = 0;
+  while ((depth > 0) || (nErrors > 0)) {
+    state = getState(states, depth, nErrors, stateId);
+    if (hasTrace(state, MATCH)) {
+      --depth;
+    }
+    else if (hasTrace(state, MISMATCH)) {
+      --depth;
+      assert(nErrors > 0);
+      --nErrors;
+    }
+    else if (hasTrace(state, INSERTION)) {
+      --depth;
+      assert(nErrors > 0);
+      --nErrors;
+      ++nIndels;
+    }
+    else if (hasTrace(state, DELETION)) {
+      assert(nErrors > 0);
+      --nErrors;
+      ++nIndels;
+    }
+    else {
+      assert(false);
+    }
+    stateId = state->previousState;
+  }
+  return nIndels;
+}
+
+void putBestStateFirst (states_t *states, size_t depth, size_t nErrors, size_t firstStateId, size_t lastStateId) {
+  state_t *theseStates = states->states[nErrors] + states->firstState[depth][nErrors];
+  size_t minNIndels = getNIndels(states, depth, nErrors, firstStateId);
+  size_t minId      = firstStateId;
+  for (size_t stateId = firstStateId + 1; (stateId < lastStateId) && (minNIndels > 0); ++stateId) {
+    size_t nIndels = getNIndels(states, depth, nErrors, stateId);
+    if (nIndels < minNIndels) {
+      minNIndels = nIndels;
+      minId = stateId;
+    }
+  }
+  if (minId != firstStateId) {
+    theseStates[firstStateId] = theseStates[minId];
+  }
+}
+
+// Aim: discard redundant mappings (favors mismatches over indels)
 void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
   assert(depth < states->depth);
   assert(nErrors <= states->maxErrors[depth]);
-  size_t previousNStates = states->nStates[depth][nErrors];
-  size_t nextNStates = 0;
+  size_t nStates = states->nStates[depth][nErrors];
   state_t *theseStates = states->states[nErrors] + states->firstState[depth][nErrors];
-  if (previousNStates <= 1) {
+  size_t firstStateId = 0;
+  size_t secondStateId = 1;
+  if (nStates <= 1) {
     return;
   }
   //TODO check that the pointers are good!
-  //printf("\t\t\t\tSimplify states from %zu ", previousNStates);
-  //printf("Entering Simplify States @ depth %zu with %zu errors and %zu elements.\n", depth, nErrors, previousNStates); fflush(stdout);
-  qsort(theseStates, previousNStates, sizeof(state_t), sortCompareStates);
-  for (size_t secondStateId = 1; secondStateId < previousNStates; ++secondStateId) {
+  //printf("\t\t\t\tSimplify states from %zu ", nStates);
+  //printf("Entering Simplify States @ depth %zu with %zu errors and %zu elements.\n", depth, nErrors, nStates); fflush(stdout);
+  // Sort the states by position
+  qsort(theseStates, nStates, sizeof(state_t), sortCompareStates);
+  /* ==BEFORE==
+   *   STEP 1         |   ...   |              STEP 2        |   ...   |       STEP 3        |   ...   |
+   *                  |   ...   |   e s                      |   ...   |                     |   ...   |
+   * nextNState ----> | state x |-\ q t     nextNState ----> | state x |                     | state x |
+   *                  |   ...   | | u a                      | state y |    nextNState ----> | state y |
+   *                  |   ...   |-/ i t                      |   ...   |                     |   ...   |
+   * secondStateId -> | state y |   v e     secondStateId -> | state y |                     | state y |
+   *                  |   ...   |   . s                      |   ...   |    secondStateId -> |   ...   |
+   */
+  /* ==NOW==
+   *   STEP 1         |   ...   |              STEP 2        |   ...   |       STEP 3        |   ...   |
+   *                  |   ...   |   e s                      |   ...   |                     |   ...   |
+   * firstStateId --> | state 1 |-\ q t     firstStateId --> | state 1 |                     | state 1 |
+   *                  | state 2 | | u a                      | state 4 |    firstStateId --> | state 4 |
+   *                  | state 3 |-/ i t                      | state 5 |    secondStateId -> | state 5 |
+   * secondStateId -> | state 4 |   v e     secondStateId -> |   ...   |                     |   ...   |
+   *                  | state 5 |   . s
+   *                  |   ...   |
+   */
+  for (; secondStateId < nStates; ++secondStateId) {
     //printf("\tCurrent state: %zu/%zu/%zu\n", nextNStates, secondStateId, previousNStates); fflush(stdout);
-    if (! areStatesEqual(&theseStates[nextNStates], &theseStates[secondStateId])) {
-    //if (! canMerge(&states[firstStateId], &states[secondStateId])) {
-      ++nextNStates;
-      if (nextNStates < secondStateId) {
-        theseStates[nextNStates] = theseStates[secondStateId];
+    if (! areStatesEqual(&theseStates[firstStateId], &theseStates[secondStateId])) {
+      // Sort the equivalent states by type of errors: min. # mismatches first
+      size_t nEquivalent = secondStateId - firstStateId;
+      if (nEquivalent > 1) {
+        if (nErrors > 0) {
+          putBestStateFirst(states, depth, nErrors, firstStateId, secondStateId);
+        }
+        memmove(theseStates + firstStateId + 1, theseStates + secondStateId, (nStates - secondStateId) * sizeof(state_t));
+        nStates -= nEquivalent + 1;
       }
-      assert(nextNStates <= previousNStates);
-      assert(nextNStates <= secondStateId);
+      ++firstStateId;
+      secondStateId = firstStateId; // Will be increased at the end of the for loop
+      assert(firstStateId <= nStates);
       assert(secondStateId < N_STATES);
     }
   }
-  ++nextNStates;
+  size_t nEquivalent = nStates - firstStateId;
+  if (nEquivalent > 1) {
+    if (nErrors > 0) {
+      putBestStateFirst(states, depth, nErrors, firstStateId, nStates);
+    }
+    nStates = firstStateId + 1;
+  }
   //printf("to %zu\n", nextNStates);
-  states->nStates[depth][nErrors] = nextNStates;
-  assert(states->nStatesPerPosition[depth] >= previousNStates - nextNStates);
-  states->nStatesPerPosition[depth] -= previousNStates - nextNStates;
+  states->nStates[depth][nErrors] = nStates;
+  assert(states->nStatesPerPosition[depth] >= nStates);
+  states->nStatesPerPosition[depth] -= nStates;
 }
 
 state_t *addState (states_t *states, size_t depth, size_t nErrors, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
