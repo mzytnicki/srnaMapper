@@ -190,7 +190,7 @@ void *mappingThreadMain (void *parametersVoid) {
   cellVisitor_t              cellVisitor;
   outputSam_t                outputSam;
   outputSam.outputFiles = parameters->samFiles;
-  createOutputSam(&outputSam, parameters->tree->depth, parameters->writeMutex, parameters->threadId);
+  createOutputSam(&outputSam, parameters->tree->depth, parameters->writeMutex);
   updateBounds(&firstCellId, &lastCellId, THREAD_CELLID_STEP, parameters->incMutex, true);
   clearCellVisitor(&cellVisitor);
   while (firstCellId <= N_TREE_BASE) {

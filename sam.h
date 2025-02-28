@@ -9,7 +9,6 @@
  * Stores a hit, and the number of corresponding identical sequences in the input files
  */
 typedef struct {
-  char         threadId; // one char ('A', 'B', etc.) per thread, written in the (unique) read name
   count_t     *readIds;  // one read id for each output file, the id is given to the first read (in case of multiple reads per sequence)
   char        *readNames; // concatenated read names
   count_t     *counts;
@@ -22,10 +21,10 @@ typedef struct {
   unsigned int nHits;
   unsigned int hitId;
   unsigned int nErrors;
+  unsigned int nIndels;
 } samLine_t;
 
-void createSamLine (samLine_t *samLine, char threaId, count_t *readIds, count_t *counts, char *sequence, char *quality) {
-  samLine->threadId  = threaId;
+void createSamLine (samLine_t *samLine, count_t *readIds, count_t *counts, char *sequence, char *quality) {
   samLine->readIds   = readIds;
   samLine->counts    = counts;
   samLine->sequence  = sequence;
@@ -62,7 +61,7 @@ void swapSamLines (samLine_t *samLine1, samLine_t *samLine2) {
 }
 
 void printSamLine (const samLine_t *samLine) {
-  printf("%s (%p, %p) pos %i:%" PRId64 " %u/%u hits, counts:", samLine->sequence, samLine, samLine->sequence, samLine->rid, samLine->pos, samLine->hitId, samLine->nHits);
+  printf("%s (%p, %p) pos %i:%" PRId64 " %u/%u hits, %u(%u) errors, counts:", samLine->sequence, samLine, samLine->sequence, samLine->rid, samLine->pos, samLine->hitId, samLine->nHits, samLine->nErrors, samLine->nIndels);
   for (unsigned int i = 0; i < parameters->nReadsFiles; ++i) {
     printf(" %u", samLine->counts[i]);
   }
@@ -72,7 +71,7 @@ void printSamLine (const samLine_t *samLine) {
 /**
  * Copy one SAM information to the buffer
  */
-void copyToSamLine (samLine_t *samLine, size_t nCounts, count_t *readIds, count_t *counts, char *readNames, unsigned int flag, int rid, int64_t pos, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, const char *cigar, const char *sequence, const char *quality) {
+void copyToSamLine (samLine_t *samLine, size_t nCounts, count_t *readIds, count_t *counts, char *readNames, unsigned int flag, int rid, int64_t pos, bwtint_t nHits, bwtint_t hitId, unsigned int nErrors, unsigned int nIndels, const char *cigar, const char *sequence, const char *quality) {
   memcpy(samLine->readIds,  readIds,  nCounts * sizeof(count_t));
   samLine->readNames = readNames;
   memcpy(samLine->counts,   counts,   nCounts * sizeof(count_t));
@@ -85,6 +84,7 @@ void copyToSamLine (samLine_t *samLine, size_t nCounts, count_t *readIds, count_
   samLine->nHits   = nHits;
   samLine->hitId   = hitId;
   samLine->nErrors = nErrors;
+  samLine->nIndels = nIndels;
   //printf("Adding sam line: ");
   //printSamLine(samLine);
 } 
@@ -94,7 +94,7 @@ void printSamTailLine (FILE *file, samLine_t *samLine) {
 }
 
 void printSamLineUnique (FILE *file, samLine_t *samLine) {
-  fprintf(file, "read_%c_%u_x", samLine->threadId, samLine->readIds[0]);
+  fprintf(file, "%s", samLine->readNames);
   for (size_t readsFileId = 0; readsFileId < parameters->nReadsFiles; ++readsFileId) {
     fprintf(file, "_%" PRIu32, samLine->counts[readsFileId]);
   }
@@ -125,6 +125,7 @@ typedef struct {
   FILE            **outputFiles;
   count_t          *counts;
   unsigned int      sequenceSize;
+  unsigned int      nIndels;
   unsigned int      backtraceSize;
   char             *backtraceCigar;
   unsigned char    *backtraceLengths;
@@ -145,7 +146,7 @@ typedef struct {
   size_t           nSamLines;
 } outputSam_t;
 
-void createOutputSam (outputSam_t *outputSam, unsigned int readSize, pthread_mutex_t *mutex, char threadId) {
+void createOutputSam (outputSam_t *outputSam, unsigned int readSize, pthread_mutex_t *mutex) {
   count_t *samLinesReadIds;
   count_t *samLinesCounts;
   char    *samLinesSequences;
@@ -170,13 +171,14 @@ void createOutputSam (outputSam_t *outputSam, unsigned int readSize, pthread_mut
   outputSam->samLinesQualities = (char *)          mallocOrDie(outputSam->maxSamLines * (readSize+1) * sizeof(char));
   outputSam->writeMutex        = mutex;
   outputSam->nSamLines         = 0;
+  outputSam->nIndels           = 0;
   outputSam->samLines          = (samLine_t *) mallocOrDie(outputSam->maxSamLines * sizeof(samLine_t));
   samLinesReadIds   = outputSam->samLinesReadIds;
   samLinesCounts    = outputSam->samLinesCounts;
   samLinesSequences = outputSam->samLinesSequences;
   samLinesQualities = outputSam->samLinesQualities;
   for (size_t samLineId = 0; samLineId < outputSam->maxSamLines; ++samLineId) {
-    createSamLine(&outputSam->samLines[samLineId], threadId, samLinesReadIds, samLinesCounts, samLinesSequences, samLinesQualities);
+    createSamLine(&outputSam->samLines[samLineId], samLinesReadIds, samLinesCounts, samLinesSequences, samLinesQualities);
     samLinesReadIds   += readIdOffset;
     samLinesCounts    += parameters->nReadsFiles;
     samLinesSequences += readSize+1;
@@ -221,6 +223,7 @@ void computeCigar (outputSam_t *outputSam) {
 void setCigarNoError (outputSam_t *outputSam, unsigned int readLength) {
   sprintf(outputSam->forwardCigar, "%u=", readLength);
   sprintf(outputSam->backwardCigar, "%u=", readLength);
+  outputSam->nIndels = 0;
 }
 
 /**
@@ -297,6 +300,15 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
     printSamLine(&outputSam->samLines[samLineOffset+i]);
   }
   */
+  /* BEFORE                                AFTER
+   *            |     |                               |     | 
+   * first ---> |  A  | -\                            |  A  | 
+   *            |  B  |  | Identical       first ---> |  D  | 
+   *            |  C  | -/                            |  C  | 
+   * free  ---> |  D  |                               |  B  |
+   *            |  E  |                    free  ---> |  E  |
+   *            |     |                               |     |
+   */
   for (unsigned int samLineId = 1; samLineId < nLines; ++samLineId, ++samLineCurrent) {
     /*
     printf("Step: previousRid: %i, previousPos: %" PRId64 ", current: %p, free: %p\n", previousRid, previousPos, samLineCurrent, samLineFree);
@@ -310,6 +322,7 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
     if ((previousRid != currentRid) || (currentPos - previousPos > samLineCurrent->nErrors) || (previousStrand != currentStrand)) {
       if (samLineFree != samLineCurrent) {
         //memcpy(samLineFree, samLineCurrent, sizeof(samLine_t));
+        samLineFirst = samLineCurrent;
         swapSamLines(samLineFree, samLineCurrent);
       }
       ++samLineFree;
@@ -317,6 +330,10 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
       previousRid    = currentRid;
       previousPos    = currentPos;
       previousStrand = currentStrand;
+    }
+    // Current should be the one with lowest # indels
+    else if (samLineCurrent->nIndels < samLineFirst->nIndels) {
+      swapSamLines(samLineCurrent, samLineFirst);
     }
   }
   if (nNewLines != nLines) {
@@ -343,7 +360,7 @@ void addSamLine (outputSam_t *outputSam, unsigned int flag, int rid, int64_t pos
   assert(outputSam->nSamLines < outputSam->maxSamLines);
   for (unsigned int fileId = 0; fileId < parameters->nOutputFileNames; ++fileId) {
     size_t readNamesOffset = 0;
-    copyToSamLine(&outputSam->samLines[outputSam->nSamLines], parameters->nReadsFiles, outputSam->readIds, outputSam->counts, outputSam->readNames + readNamesOffset, flag, rid, pos, nHits, hitId, nErrors, cigar, sequence, quality);
+    copyToSamLine(&outputSam->samLines[outputSam->nSamLines], parameters->nReadsFiles, outputSam->readIds, outputSam->counts, outputSam->readNames + readNamesOffset, flag, rid, pos, nHits, hitId, nErrors, outputSam->nIndels, cigar, sequence, quality);
     for (count_t i = 0; i < outputSam->counts[fileId]; ++i) {
         readNamesOffset += strlen(outputSam->readNames) + 1;
     }

@@ -225,10 +225,10 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
     return;
   }
   //TODO check that the pointers are good!
-  //printf("\t\t\t\tSimplify states from %zu ", nStates);
   //printf("Entering Simplify States @ depth %zu with %zu errors and %zu elements.\n", depth, nErrors, nStates); fflush(stdout);
   // Sort the states by position
   qsort(theseStates, nStates, sizeof(state_t), sortCompareStates);
+  //printStates(states, depth);
   /* ==BEFORE==
    *   STEP 1         |   ...   |              STEP 2        |   ...   |       STEP 3        |   ...   |
    *                  |   ...   |   e s                      |   ...   |                     |   ...   |
@@ -248,32 +248,36 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
    *                  | state 5 |   . s
    *                  |   ...   |
    */
+  //for (size_t tmp = 0; tmp < nStates; ++tmp) printState(&theseStates[tmp], depth);
   for (; secondStateId < nStates; ++secondStateId) {
-    //printf("\tCurrent state: %zu/%zu/%zu\n", nextNStates, secondStateId, previousNStates); fflush(stdout);
+    //printf("\tCurrent state: %zu/%zu/%zu\n", firstStateId, secondStateId, nStates); fflush(stdout);
     if (! areStatesEqual(&theseStates[firstStateId], &theseStates[secondStateId])) {
       // Sort the equivalent states by type of errors: min. # mismatches first
       size_t nEquivalent = secondStateId - firstStateId;
+      //printf("\t...not equal, %zu equivalents\n", nEquivalent);
       if (nEquivalent > 1) {
         if (nErrors > 0) {
           putBestStateFirst(states, depth, nErrors, firstStateId, secondStateId);
         }
         memmove(theseStates + firstStateId + 1, theseStates + secondStateId, (nStates - secondStateId) * sizeof(state_t));
-        nStates -= nEquivalent + 1;
+        nStates -= nEquivalent - 1;
       }
       ++firstStateId;
       secondStateId = firstStateId; // Will be increased at the end of the for loop
       assert(firstStateId <= nStates);
       assert(secondStateId < N_STATES);
     }
+    //printf("\tCurrent state (2): %zu/%zu/%zu\n", firstStateId, secondStateId, nStates); fflush(stdout);
   }
   size_t nEquivalent = nStates - firstStateId;
+  //printf("\tlast, %zu equivalents\n", nEquivalent);
   if (nEquivalent > 1) {
     if (nErrors > 0) {
       putBestStateFirst(states, depth, nErrors, firstStateId, nStates);
     }
     nStates = firstStateId + 1;
   }
-  //printf("to %zu\n", nextNStates);
+  //printf("to %zu\n", nStates);
   states->nStates[depth][nErrors] = nStates;
   assert(states->nStatesPerPosition[depth] >= nStates);
   states->nStatesPerPosition[depth] -= nStates;
@@ -356,6 +360,7 @@ size_t computeBacktrace (states_t *states, int depth, int nErrors, size_t stateI
   char cigar;
   int readSize = 0;
   outputSam->backtraceSize = 0;
+  outputSam->nIndels = 0;
   //printf("Compute BT\n");
   //while ((depth >= 0) || (nErrors > 0)) {
   while ((depth > 0) || (nErrors > 0)) {
@@ -384,10 +389,12 @@ size_t computeBacktrace (states_t *states, int depth, int nErrors, size_t stateI
       --depth;
       assert(nErrors > 0);
       --nErrors;
+      ++outputSam->nIndels;
     }
     else if (hasTrace(state, DELETION)) {
       --nErrors;
       ++readSize;
+      ++outputSam->nIndels;
     }
     else {
       assert(false);
