@@ -284,12 +284,7 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
   if (nLines <= 1) {
     return;
   }
-  /*
-  printf("Reducing\n");
-  for (unsigned int i = 0; i < nLines; ++i) {
-    printSamLine(&outputSam->samLines[samLineOffset+i]);
-  }
-  */
+  //printf("Before 1:\n"); for (unsigned int i = 0; i < nLines; ++i) printSamLine(&outputSam->samLines[samLineOffset+i]);
   qsort(samLineFirst, nLines, sizeof(samLine_t), samLineComparator);
   previousRid    = samLineFirst->rid;
   previousPos    = samLineFirst->pos;
@@ -343,12 +338,7 @@ void removeDuplicatesOutputLines(outputSam_t *outputSam, size_t nLines) {
       outputSam->samLines[samLineOffset+hitId].nHits = nNewLines;
     }
   }
-  /*
-  printf("  to:\n");
-  for (unsigned int i = 0; i < nNewLines; ++i) {
-    printSamLine(&outputSam->samLines[samLineOffset+i]);
-  }
-  */
+  //printf("After 1:\n"); for (unsigned int i = 0; i < nNewLines; ++i) printSamLine(&outputSam->samLines[samLineOffset+i]);
   outputSam->nSamLines = samLineOffset + nNewLines;
   writeToSam(outputSam, false);
 }

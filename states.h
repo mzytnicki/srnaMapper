@@ -221,6 +221,8 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
   state_t *theseStates = states->states[nErrors] + states->firstState[depth][nErrors];
   size_t firstStateId = 0;
   size_t secondStateId = 1;
+  size_t thisNIndels = getNIndels(states, depth, nErrors, 0);
+  size_t thatNIndels = 0;
   if (nStates <= 1) {
     return;
   }
@@ -237,8 +239,8 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
    *                  |   ...   |-/ i t                      |   ...   |                     |   ...   |
    * secondStateId -> | state y |   v e     secondStateId -> | state y |                     | state y |
    *                  |   ...   |   . s                      |   ...   |    secondStateId -> |   ...   |
-   */
-  /* ==NOW==
+   * 
+   * ==NOW==
    *   STEP 1         |   ...   |              STEP 2        |   ...   |       STEP 3        |   ...   |
    *                  |   ...   |   e s                      |   ...   |                     |   ...   |
    * firstStateId --> | state 1 |-\ q t     firstStateId --> | state 1 |                     | state 1 |
@@ -248,39 +250,35 @@ void simplifyStates (states_t *states, size_t depth, size_t nErrors) {
    *                  | state 5 |   . s
    *                  |   ...   |
    */
-  //for (size_t tmp = 0; tmp < nStates; ++tmp) printState(&theseStates[tmp], depth);
+  //printf("Starting with depth %zu and %zu errors\n", depth, nErrors);
+  //printf("Before:\n"); for (size_t tmp = 0; tmp < nStates; ++tmp) printState(&theseStates[tmp], depth);
+  //printStates(states, depth);
   for (; secondStateId < nStates; ++secondStateId) {
     //printf("\tCurrent state: %zu/%zu/%zu\n", firstStateId, secondStateId, nStates); fflush(stdout);
-    if (! areStatesEqual(&theseStates[firstStateId], &theseStates[secondStateId])) {
-      // Sort the equivalent states by type of errors: min. # mismatches first
-      size_t nEquivalent = secondStateId - firstStateId;
-      //printf("\t...not equal, %zu equivalents\n", nEquivalent);
-      if (nEquivalent > 1) {
-        if (nErrors > 0) {
-          putBestStateFirst(states, depth, nErrors, firstStateId, secondStateId);
-        }
-        memmove(theseStates + firstStateId + 1, theseStates + secondStateId, (nStates - secondStateId) * sizeof(state_t));
-        nStates -= nEquivalent - 1;
+    if (areStatesEqual(&theseStates[firstStateId], &theseStates[secondStateId])) { 
+      thatNIndels = getNIndels(states, depth, nErrors, secondStateId);
+      if (thatNIndels < thisNIndels) {
+        theseStates[firstStateId] = theseStates[secondStateId];
+        thisNIndels = thatNIndels;
       }
+    }
+    else {
       ++firstStateId;
+      theseStates[firstStateId] = theseStates[secondStateId];
+      thisNIndels = getNIndels(states, depth, nErrors, firstStateId);
       secondStateId = firstStateId; // Will be increased at the end of the for loop
       assert(firstStateId <= nStates);
       assert(secondStateId < N_STATES);
     }
     //printf("\tCurrent state (2): %zu/%zu/%zu\n", firstStateId, secondStateId, nStates); fflush(stdout);
   }
-  size_t nEquivalent = nStates - firstStateId;
-  //printf("\tlast, %zu equivalents\n", nEquivalent);
-  if (nEquivalent > 1) {
-    if (nErrors > 0) {
-      putBestStateFirst(states, depth, nErrors, firstStateId, nStates);
-    }
-    nStates = firstStateId + 1;
-  }
+  nStates = firstStateId + 1;
   //printf("to %zu\n", nStates);
-  states->nStates[depth][nErrors] = nStates;
+  //printf("After\n"); for (size_t tmp = 0; tmp < nStates; ++tmp) printState(&theseStates[tmp], depth);
+  //printStates(states, depth);
   assert(states->nStatesPerPosition[depth] >= nStates);
-  states->nStatesPerPosition[depth] -= nStates;
+  states->nStatesPerPosition[depth] = states->nStatesPerPosition[depth] - states->nStates[depth][nErrors] + nStates;
+  states->nStates[depth][nErrors] = nStates;
 }
 
 state_t *addState (states_t *states, size_t depth, size_t nErrors, bwtinterval_t *interval, unsigned char trace, unsigned char nucleotide, unsigned int previousState) {
